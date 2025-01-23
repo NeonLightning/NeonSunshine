@@ -1,13 +1,13 @@
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QFileDialog,
-    QScrollArea, QComboBox, QHBoxLayout, QMessageBox, QProgressDialog,
+    QScrollArea, QComboBox, QMessageBox, QProgressDialog,
     QDialog, QListWidget, QListWidgetItem
 )
 from PyQt5.QtCore import Qt
-import os, json
+import os, json, signal
 
 class SortDialog(QDialog):
-    def __init__(self, apps, parent=None):
+    def __init__(self, apps, json_file_path, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Sort JSON Entries")
         self.setStyleSheet("""
@@ -25,6 +25,7 @@ class SortDialog(QDialog):
             }
         """)
         self.apps = apps
+        self.json_file_path = json_file_path
         layout = QVBoxLayout()
         self.setLayout(layout)
         self.list_widget = QListWidget(self)
@@ -46,17 +47,14 @@ class SortDialog(QDialog):
                 if app.get("name") == item_name:
                     reordered_apps.append(app)
                     break
-        output_file, _ = QFileDialog.getSaveFileName(
-            self, "Save Sorted Configuration as JSON", "", "JSON Files (*.json)"
-        )
-        if output_file:
-            try:
-                with open(output_file, 'w') as f:
-                    json.dump({"env": "", "apps": reordered_apps}, f, indent=4)
-                QMessageBox.information(self, "Success", f"Sorted configuration saved to {output_file}")
-                self.accept()
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to save sorted configuration: {e}")
+        try:
+            with open(self.json_file_path, 'w') as f:
+                json.dump({"env": "", "apps": reordered_apps}, f, indent=4)
+            QMessageBox.information(self, "Success", f"Configuration saved to {self.json_file_path}")
+            self.parent().close()
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
 
 class FolderScannerApp(QWidget):
     def __init__(self):
@@ -201,17 +199,13 @@ class FolderScannerApp(QWidget):
             try:
                 with open(output_file, 'w') as f:
                     json.dump(config, f, indent=4)
-                QMessageBox.information(self, "Success", f"Configuration saved to {output_file}")
-
-                # Open the sorting dialog
-                sort_dialog = SortDialog(flat_apps, self)
+                sort_dialog = SortDialog(flat_apps, output_file, self)
                 sort_dialog.exec_()
-
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
 
-
 def main():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     app = QApplication([])
     window = FolderScannerApp()
     window.showMaximized()
