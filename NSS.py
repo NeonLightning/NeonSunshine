@@ -1,24 +1,67 @@
-import os, json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QFileDialog,
-    QScrollArea, QComboBox, QMessageBox, QProgressDialog
+    QScrollArea, QComboBox, QHBoxLayout, QMessageBox, QProgressDialog,
+    QDialog, QListWidget, QListWidgetItem
 )
 from PyQt5.QtCore import Qt
+import os, json
 
-FILTER_KEYWORDS = [
-    'uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler',
-    'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643',
-    'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864',
-    'vc_redist.x644', "oalinst"
-]
+class SortDialog(QDialog):
+    def __init__(self, apps, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Sort JSON Entries")
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #2e2e2e;
+                color: #ffffff;
+            }
+            QPushButton {
+                background-color: #444444;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+            QPushButton:hover {
+                background-color: #555555;
+            }
+        """)
+        self.apps = apps
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        self.list_widget = QListWidget(self)
+        self.list_widget.setDragDropMode(QListWidget.InternalMove)
+        for app in apps:
+            item = QListWidgetItem(app.get("name", "Unnamed App"))
+            self.list_widget.addItem(item)
+        layout.addWidget(self.list_widget)
+        save_button = QPushButton("Save Sorted JSON")
+        save_button.clicked.connect(self.save_sorted_json)
+        layout.addWidget(save_button)
+        self.showMaximized()
 
-class NoScrollComboBox(QComboBox):
-    def wheelEvent(self, event):
-        event.ignore()
+    def save_sorted_json(self):
+        reordered_apps = []
+        for i in range(self.list_widget.count()):
+            item_name = self.list_widget.item(i).text()
+            for app in self.apps:
+                if app.get("name") == item_name:
+                    reordered_apps.append(app)
+                    break
+        output_file, _ = QFileDialog.getSaveFileName(
+            self, "Save Sorted Configuration as JSON", "", "JSON Files (*.json)"
+        )
+        if output_file:
+            try:
+                with open(output_file, 'w') as f:
+                    json.dump({"env": "", "apps": reordered_apps}, f, indent=4)
+                QMessageBox.information(self, "Success", f"Sorted configuration saved to {output_file}")
+                self.accept()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save sorted configuration: {e}")
 
 class FolderScannerApp(QWidget):
     def __init__(self):
         super().__init__()
+        self.FILTER_KEYWORDS = ['uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler', 'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643', 'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864', 'vc_redist.x644', 'oalinst']
         self.setWindowTitle("Folder and Executable Selector")
         self.setStyleSheet("""
             QWidget {
@@ -69,18 +112,14 @@ class FolderScannerApp(QWidget):
         if folder:
             self.base_folders.append(folder)
             self.scan_folders()
-    
+
     def scan_folders(self):
-        # Show "Please Wait" dialog
         progress_dialog = QProgressDialog("Scanning folders, please wait...", None, 0, 0, self)
         progress_dialog.setWindowTitle("Please Wait")
-        progress_dialog.setCancelButton(None)  # Disable the cancel button
-        progress_dialog.setWindowModality(Qt.ApplicationModal)  # Make it modal
+        progress_dialog.setCancelButton(None)
+        progress_dialog.setWindowModality(Qt.ApplicationModal)
         progress_dialog.show()
-
-        QApplication.processEvents()  # Allow the dialog to render before starting the scan
-
-        # Perform the folder scanning
+        QApplication.processEvents()
         self.executables = {}
         for folder in self.base_folders:
             subfolder_data = {}
@@ -91,7 +130,7 @@ class FolderScannerApp(QWidget):
                     for root, _, files in os.walk(subfolder_path):
                         exe_files.extend(
                             os.path.join(root, f) for f in files
-                            if f.endswith('.exe') and not any(kw in f.lower() for kw in FILTER_KEYWORDS)
+                            if f.endswith('.exe') and not any(kw in f.lower() for kw in self.FILTER_KEYWORDS)
                         )
                     if exe_files:
                         subfolder_data[subfolder_path] = {
@@ -100,15 +139,10 @@ class FolderScannerApp(QWidget):
                         }
             if subfolder_data:
                 self.executables[folder] = subfolder_data
-
-        # Close the progress dialog after scanning is complete
         progress_dialog.close()
-
-        # Update the GUI with the scanned data
         self.update_gui()
 
     def update_gui(self):
-        # Clear previous content
         for i in reversed(range(self.scroll_layout.count())):
             widget = self.scroll_layout.takeAt(i).widget()
             if widget:
@@ -120,7 +154,7 @@ class FolderScannerApp(QWidget):
             for subfolder_path, data in subfolders.items():
                 subfolder_label = QLabel(f"Subfolder: {os.path.basename(subfolder_path)}")
                 self.scroll_layout.addWidget(subfolder_label)
-                combo_box = NoScrollComboBox()
+                combo_box = QComboBox()
                 combo_box.addItem("Skip")
                 combo_box.addItems(data["exe_files"])
                 combo_box.currentTextChanged.connect(lambda selected, data=data: self.update_selected_exe(data, selected))
@@ -168,8 +202,14 @@ class FolderScannerApp(QWidget):
                 with open(output_file, 'w') as f:
                     json.dump(config, f, indent=4)
                 QMessageBox.information(self, "Success", f"Configuration saved to {output_file}")
+
+                # Open the sorting dialog
+                sort_dialog = SortDialog(flat_apps, self)
+                sort_dialog.exec_()
+
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
+
 
 def main():
     app = QApplication([])
