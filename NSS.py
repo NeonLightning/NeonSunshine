@@ -56,6 +56,10 @@ class SortDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
 
+class NoScrollComboBox(QComboBox):
+    def wheelEvent(self, event):
+        event.ignore()
+
 class FolderScannerApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -152,7 +156,7 @@ class FolderScannerApp(QWidget):
             for subfolder_path, data in subfolders.items():
                 subfolder_label = QLabel(f"Subfolder: {os.path.basename(subfolder_path)}")
                 self.scroll_layout.addWidget(subfolder_label)
-                combo_box = QComboBox()
+                combo_box = NoScrollComboBox()
                 combo_box.addItem("Skip")
                 combo_box.addItems(data["exe_files"])
                 combo_box.currentTextChanged.connect(lambda selected, data=data: self.update_selected_exe(data, selected))
