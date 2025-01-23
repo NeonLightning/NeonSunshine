@@ -1,125 +1,148 @@
-import os
-import json
-from tkinter import Tk, filedialog, StringVar, Label, Button, OptionMenu, Frame, Canvas, Scrollbar, messagebox
+import os, json
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QFileDialog,
+    QScrollArea, QComboBox, QMessageBox, QProgressDialog
+)
+from PyQt5.QtCore import Qt
 
-FILTER_KEYWORDS = ['uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler', 'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643', 'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864', 'vc_redist.x644', "oalinst"]
+FILTER_KEYWORDS = [
+    'uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler',
+    'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643',
+    'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864',
+    'vc_redist.x644', "oalinst"
+]
 
-# Dark mode styles
-DARK_MODE_STYLES = {
-    "bg": "#2e2e2e",
-    "fg": "#ffffff",
-    "button_bg": "#444444",
-    "button_fg": "#ffffff",
-    "highlight_bg": "#555555",
-    "highlight_fg": "#ffffff",
-    "menu_bg": "#2e2e2e",
-    "menu_fg": "#ffffff"
-}
+class NoScrollComboBox(QComboBox):
+    def wheelEvent(self, event):
+        event.ignore()
 
-def apply_dark_mode(widget):
-    widget.configure(bg=DARK_MODE_STYLES["bg"], fg=DARK_MODE_STYLES["fg"])
+class FolderScannerApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Folder and Executable Selector")
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #2e2e2e;
+                color: #ffffff;
+                font-size: 14px;
+            }
+            QPushButton {
+                background-color: #444444;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+            QPushButton:hover {
+                background-color: #555555;
+            }
+            QComboBox {
+                background-color: #444444;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
+            QLabel {
+                color: #ffffff;
+            }
+        """)
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+        self.base_folders = []
+        self.executables = {}
+        self.init_ui()
 
-def apply_dark_mode_button(widget):
-    widget.configure(bg=DARK_MODE_STYLES["button_bg"], fg=DARK_MODE_STYLES["button_fg"], activebackground=DARK_MODE_STYLES["highlight_bg"], activeforeground=DARK_MODE_STYLES["highlight_fg"])
+    def init_ui(self):
+        select_button = QPushButton("Select Folders")
+        select_button.clicked.connect(self.select_folders)
+        self.layout.addWidget(select_button)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_content = QWidget()
+        self.scroll_layout = QVBoxLayout()
+        self.scroll_content.setLayout(self.scroll_layout)
+        self.scroll_area.setWidget(self.scroll_content)
+        self.layout.addWidget(self.scroll_area)
+        save_button = QPushButton("Save Configuration")
+        save_button.clicked.connect(self.save_configuration)
+        self.layout.addWidget(save_button)
 
-def scan_folders(base_folders):
-    executables = {}
-    for folder in base_folders:
-        subfolder_data = {}
-        for subfolder in os.listdir(folder):
-            subfolder_path = os.path.join(folder, subfolder)
-            if os.path.isdir(subfolder_path):
-                exe_files = []
-                for root, _, files in os.walk(subfolder_path):
-                    exe_files.extend(
-                        os.path.join(root, f) for f in files
-                        if f.endswith('.exe') and not any(kw in f.lower() for kw in FILTER_KEYWORDS)
-                    )
-                if exe_files:
-                    subfolder_data[subfolder_path] = {
-                        "exe_files": exe_files,
-                        "selected_exe": "Skip"
-                    }
-        if subfolder_data:
-            executables[folder] = subfolder_data
-    return executables
+    def select_folders(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
+        if folder:
+            self.base_folders.append(folder)
+            self.scan_folders()
+    
+    def scan_folders(self):
+        # Show "Please Wait" dialog
+        progress_dialog = QProgressDialog("Scanning folders, please wait...", None, 0, 0, self)
+        progress_dialog.setWindowTitle("Please Wait")
+        progress_dialog.setCancelButton(None)  # Disable the cancel button
+        progress_dialog.setWindowModality(Qt.ApplicationModal)  # Make it modal
+        progress_dialog.show()
 
-def update_selected_exe(subfolder_data, selected_exe):
-    subfolder_data["selected_exe"] = selected_exe
-    print(f"Updated selection: {selected_exe}")
+        QApplication.processEvents()  # Allow the dialog to render before starting the scan
 
-def create_gui(apps, save_callback):
-    root = Tk()
-    root.title("Folder and Executable Selector")
-    root.configure(bg=DARK_MODE_STYLES["bg"])
-    root.protocol("WM_DELETE_WINDOW", root.quit)
+        # Perform the folder scanning
+        self.executables = {}
+        for folder in self.base_folders:
+            subfolder_data = {}
+            for subfolder in os.listdir(folder):
+                subfolder_path = os.path.join(folder, subfolder)
+                if os.path.isdir(subfolder_path):
+                    exe_files = []
+                    for root, _, files in os.walk(subfolder_path):
+                        exe_files.extend(
+                            os.path.join(root, f) for f in files
+                            if f.endswith('.exe') and not any(kw in f.lower() for kw in FILTER_KEYWORDS)
+                        )
+                    if exe_files:
+                        subfolder_data[subfolder_path] = {
+                            "exe_files": exe_files,
+                            "selected_exe": "Skip"
+                        }
+            if subfolder_data:
+                self.executables[folder] = subfolder_data
 
-    canvas = Canvas(root, bg=DARK_MODE_STYLES["bg"], highlightbackground=DARK_MODE_STYLES["highlight_bg"])
-    scrollbar = Scrollbar(root, orient="vertical", command=canvas.yview)
-    canvas.configure(yscrollcommand=scrollbar.set)
+        # Close the progress dialog after scanning is complete
+        progress_dialog.close()
 
-    frame = Frame(canvas, bg=DARK_MODE_STYLES["bg"])
-    canvas.create_window((0, 0), window=frame, anchor="nw")
-    scrollbar.pack(side="right", fill="y")
-    canvas.pack(side="left", fill="both", expand=True)
-    canvas.bind_all("<MouseWheel>", lambda event: canvas.yview_scroll(-1 * (event.delta // 120), "units"))
+        # Update the GUI with the scanned data
+        self.update_gui()
 
-    row_index = 0
-    for base_folder, subfolders in apps.items():
-        label = Label(frame, text=f"Base Folder: {base_folder}", font=("Arial", 12, "bold"), bg=DARK_MODE_STYLES["bg"], fg=DARK_MODE_STYLES["fg"])
-        label.grid(row=row_index, column=0, pady=10, sticky="w")
-        row_index += 1
-        for subfolder_path, data in subfolders.items():
-            subfolder_label = Label(frame, text=f"Subfolder: {os.path.basename(subfolder_path)}", bg=DARK_MODE_STYLES["bg"], fg=DARK_MODE_STYLES["fg"])
-            subfolder_label.grid(row=row_index, column=0, pady=5, sticky="w")
+    def update_gui(self):
+        # Clear previous content
+        for i in reversed(range(self.scroll_layout.count())):
+            widget = self.scroll_layout.takeAt(i).widget()
+            if widget:
+                widget.deleteLater()
+        for base_folder, subfolders in self.executables.items():
+            base_label = QLabel(f"Base Folder: {base_folder}")
+            base_label.setStyleSheet("font-weight: bold;")
+            self.scroll_layout.addWidget(base_label)
+            for subfolder_path, data in subfolders.items():
+                subfolder_label = QLabel(f"Subfolder: {os.path.basename(subfolder_path)}")
+                self.scroll_layout.addWidget(subfolder_label)
+                combo_box = NoScrollComboBox()
+                combo_box.addItem("Skip")
+                combo_box.addItems(data["exe_files"])
+                combo_box.currentTextChanged.connect(lambda selected, data=data: self.update_selected_exe(data, selected))
+                self.scroll_layout.addWidget(combo_box)
 
-            selected_exe_var = StringVar(frame)
-            selected_exe_var.set(data["selected_exe"])
+    def update_selected_exe(self, subfolder_data, selected_exe):
+        subfolder_data["selected_exe"] = selected_exe
 
-            formatted_exe_files = ["Skip"] + [exe.replace("\\", "/") for exe in data["exe_files"]]
-            option_menu = OptionMenu(
-                frame, selected_exe_var, *formatted_exe_files,
-                command=lambda selected, data=data: update_selected_exe(data, selected)
-            )
-
-            # Apply dark mode styles to OptionMenu
-            menu = option_menu.nametowidget(option_menu.menuname)
-            menu.configure(bg=DARK_MODE_STYLES["menu_bg"], fg=DARK_MODE_STYLES["menu_fg"])
-            option_menu.configure(bg=DARK_MODE_STYLES["button_bg"], fg=DARK_MODE_STYLES["button_fg"], activebackground=DARK_MODE_STYLES["highlight_bg"], activeforeground=DARK_MODE_STYLES["highlight_fg"])
-            option_menu.grid(row=row_index + 1, column=0, pady=5, sticky="w")
-            row_index += 2
-
-    save_button = Button(frame, text="Save Configuration", command=lambda: save_callback(apps))
-    apply_dark_mode_button(save_button)
-    save_button.grid(row=row_index, column=0, pady=10)
-
-    frame.update_idletasks()
-    canvas.config(scrollregion=canvas.bbox("all"))
-    root.mainloop()
-
-def main():
-    base_folders = []
-    root = Tk()
-    root.withdraw()
-    while True:
-        folder = filedialog.askdirectory(title="Select Folder to Scan")
-        if not folder:
-            break
-        base_folders.append(folder)
-        add_more = messagebox.askyesno("Add More Folders", "Do you want to select more folders?")
-        if not add_more:
-            break
-    if not base_folders:
-        messagebox.showinfo("Info", "No folders selected. Exiting.")
-        return
-    executables = scan_folders(base_folders)
-    if not executables:
-        messagebox.showinfo("Info", "No executables found.")
-        return
-
-    def save_callback(apps):
+    def save_configuration(self):
         flat_apps = []
-        for base_folder, subfolders in apps.items():
+        flat_apps.append({
+            "name": "Desktop",
+            "image-path": "desktop.png"
+        })
+        flat_apps.append({
+            "name": "Steam Big Picture",
+            "cmd": "steam://open/bigpicture",
+            "auto-detach": "true",
+            "wait-all": "true",
+            "image-path": "steam.png"
+        })
+        for base_folder, subfolders in self.executables.items():
             for subfolder_path, data in subfolders.items():
                 if data["selected_exe"] == "Skip":
                     continue
@@ -139,19 +162,20 @@ def main():
             "env": "",
             "apps": flat_apps
         }
-        output_file = filedialog.asksaveasfilename(
-            title="Save Configuration as JSON",
-            defaultextension=".json",
-            filetypes=[("JSON Files", "*.json")]
-        )
+        output_file, _ = QFileDialog.getSaveFileName(self, "Save Configuration as JSON", "", "JSON Files (*.json)")
         if output_file:
             try:
                 with open(output_file, 'w') as f:
                     json.dump(config, f, indent=4)
-                messagebox.showinfo("Success", f"Configuration saved to {output_file}")
+                QMessageBox.information(self, "Success", f"Configuration saved to {output_file}")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to save configuration: {e}")
-    create_gui(executables, save_callback)
+                QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
+
+def main():
+    app = QApplication([])
+    window = FolderScannerApp()
+    window.showMaximized()
+    app.exec_()
 
 if __name__ == "__main__":
     main()
