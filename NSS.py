@@ -1,39 +1,75 @@
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QFileDialog,
     QScrollArea, QComboBox, QMessageBox, QProgressDialog, QSizePolicy,
-    QDialog, QListWidget, QListWidgetItem, QLineEdit, QHBoxLayout
+    QDialog, QListWidget, QListWidgetItem, QLineEdit, QHBoxLayout, QCheckBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
-import os, json, signal
+import os, json, signal, requests, logging
+
+logging.basicConfig(
+    filename="steamgriddb_errors.log",
+    level=logging.ERROR,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+__version__ = "1.0.3"
+
+class ConfigDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configuration")
+        self.setLayout(QVBoxLayout())
+        self.api_key_edit = QLineEdit()
+        self.api_key_edit.setPlaceholderText("Enter SteamGridDB API Key")
+        self.layout().addWidget(QLabel("SteamGridDB API Key:"))
+        self.layout().addWidget(self.api_key_edit)
+        self.cover_checkbox = QCheckBox("Download Covers")
+        self.cover_checkbox.setChecked(True)
+        self.layout().addWidget(self.cover_checkbox)
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self.save_config)
+        self.layout().addWidget(save_button)
+        self.config_file = "NSS-config.json"
+        self.load_config()
+
+    def load_config(self):
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r") as f:
+                    config = json.load(f)
+                    self.api_key_edit.setText(config.get("api_key", ""))
+                    self.cover_checkbox.setChecked(config.get("download_covers", True))
+            except Exception as e:
+                logging.error(f"Failed to load configuration: {e}")
+
+    def save_config(self):
+        config = {
+            "api_key": self.api_key_edit.text(),
+            "download_covers": self.cover_checkbox.isChecked()
+        }
+        try:
+            with open(self.config_file, "w") as f:
+                json.dump(config, f, indent=4)
+            logging.info("Configuration saved successfully.")
+            QMessageBox.information(self, "Success", "Configuration saved!")
+            self.accept()
+        except Exception as e:
+            logging.error(f"Failed to save configuration: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
+
+    def get_config(self):
+        return {
+            "api_key": self.api_key_edit.text(),
+            "download_covers": self.cover_checkbox.isChecked()
+        }
 
 class SortDialog(QDialog):
     def __init__(self, apps, json_file_path, parent=None):
         super().__init__(parent)
-        self.setWindowIcon(QIcon('icon.ico'))
-        self.setWindowTitle("Sort JSON Entries")
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #2e2e2e;
-                color: #ffffff;
-            }
-            QPushButton {
-                background-color: #444444;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
-            QPushButton:hover {
-                background-color: #555555;
-            }
-            QLineEdit {
-                background-color: #3e3e3e;
-                color: #ffffff;
-                border: 1px solid #555555;
-            }
-        """)
         self.apps = apps
         self.json_file_path = json_file_path
         self.cmd_edits = {}
+        self.config = self.load_config()
         layout = QVBoxLayout()
         self.setLayout(layout)
         self.list_widget = QListWidget(self)
@@ -45,6 +81,9 @@ class SortDialog(QDialog):
             self.list_widget.addItem(list_item)
             self.list_widget.setItemWidget(list_item, item_widget)
         layout.addWidget(self.list_widget)
+        config_button = QPushButton("Configure")
+        config_button.clicked.connect(self.open_config_dialog)
+        layout.addWidget(config_button)
         save_button = QPushButton("Save Sorted JSON")
         save_button.clicked.connect(self.save_sorted_json)
         layout.addWidget(save_button)
@@ -53,6 +92,8 @@ class SortDialog(QDialog):
     def create_app_widget(self, app):
         widget = QWidget()
         layout = QHBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(10)
         widget.setLayout(layout)
         name_label = QLabel(app.get("name", "Unnamed App"))
         layout.addWidget(name_label)
@@ -76,26 +117,118 @@ class SortDialog(QDialog):
         self.cmd_edits[app.get("name", "Unnamed App")] = cmd_edit
         return widget
 
+    def open_config_dialog(self):
+        config_dialog = ConfigDialog(self)
+        if config_dialog.exec_():
+            self.config = config_dialog.get_config()
+
     def save_sorted_json(self):
         reordered_apps = []
-        for i in range(self.list_widget.count()):
-            list_item = self.list_widget.item(i)
-            item_widget = self.list_widget.itemWidget(list_item)
-            name_label = item_widget.layout().itemAt(0).widget()
-            cmd_edit = self.cmd_edits[name_label.text()]
-            for app in self.apps:
-                if app.get("name") == name_label.text():
-                    app["cmd"] = cmd_edit.text()
-                    reordered_apps.append(app)
-                    break
+        progress_dialog = QProgressDialog("Please wait, this may take a few minutes...", "Cancel", 0, self.list_widget.count(), self)
+        progress_dialog.setWindowTitle("Processing")
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.setValue(0)
         try:
-            with open(self.json_file_path, 'w') as f:
+            for i in range(self.list_widget.count()):
+                if progress_dialog.wasCanceled():
+                    QMessageBox.warning(self, "Canceled", "The operation was canceled.")
+                    return
+                list_item = self.list_widget.item(i)
+                item_widget = self.list_widget.itemWidget(list_item)
+                name_label = item_widget.layout().itemAt(0).widget()
+                cmd_edit = self.cmd_edits[name_label.text()]
+                for app in self.apps:
+                    if app.get("name") == name_label.text():
+                        if app["name"] == "Desktop":
+                            app["image-path"] = "desktop.png"
+                            app["cmd"] = ""
+                        elif app["name"] == "Steam Big Picture":
+                            app["image-path"] = "steam.png"
+                            app["cmd"] = "steam://open/bigpicture"
+                            app["auto-detatch"] = True
+                            app["wait-all"] = True
+                        else:
+                            app["cmd"] = cmd_edit.text()
+                            if self.config.get("download_covers"):
+                                image_path = self.fetch_game_image(name_label.text())
+                                if image_path:
+                                    app["image-path"] = '"' + image_path.replace("/", "\\") + '"'
+                        reordered_apps.append(app)
+                        break
+                progress_dialog.setValue(i + 1)
+            with open(self.json_file_path, "w") as f:
                 json.dump({"env": "", "apps": reordered_apps}, f, indent=4)
             QMessageBox.information(self, "Success", f"Configuration saved to {self.json_file_path}")
-            self.parent().close()
             self.accept()
         except Exception as e:
+            logging.error(f"Failed to save JSON: {e}")
             QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
+        finally:
+            progress_dialog.close()
+            
+    def fetch_game_image(self, game_name):
+        if game_name in ["Desktop", "Steam Big Picture"]:
+            logging.info(f"Skipping image fetch for {game_name}")
+            return None
+        api_key = self.config.get("api_key")
+        if not api_key:
+            logging.error("SteamGridDB API Key is not configured.")
+            QMessageBox.warning(self, "Configuration Error", "SteamGridDB API Key is missing. Please configure the settings.")
+            return None
+        url = f"https://www.steamgriddb.com/api/v2/search/autocomplete/{game_name}"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            results = response.json().get("data", [])
+            logging.debug(f"SteamGridDB response for {game_name}: {results}")
+
+            if results:
+                game_id = results[0]["id"]
+                return self.download_cover(game_id, game_name, api_key)
+        except Exception as e:
+            logging.error(f"Failed to fetch game data for {game_name}: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to fetch game data for {game_name}: {e}")
+        return None
+
+    def download_cover(self, game_id, game_name, api_key):
+        url = f"https://www.steamgriddb.com/api/v2/grids/game/{game_id}"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            grids = response.json().get("data", [])
+            logging.debug(f"Grid data for {game_name}: {grids}")
+            if grids:
+                image_url = grids[0]["url"]
+                response = requests.get(image_url, stream=True)
+                response.raise_for_status()
+                image_dir = os.path.join(os.path.dirname(self.json_file_path), "covers")
+                os.makedirs(image_dir, exist_ok=True)
+                file_path = os.path.join(image_dir, f"{game_name}.jpg")
+                with open(file_path, "wb") as f:
+                    for chunk in response.iter_content(1024):
+                        f.write(chunk)
+                logging.info(f"Image saved for {game_name} at {file_path}")
+                return file_path
+        except Exception as e:
+            logging.error(f"Failed to download cover for {game_name}: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to download cover for {game_name}: {e}")
+        return None
+
+    def load_config(self):
+        config_file = "NSS-config.json"
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r") as f:
+                    config = json.load(f)
+                    logging.info("Configuration loaded successfully.")
+                    return config
+            except Exception as e:
+                logging.error(f"Failed to load configuration: {e}")
+        logging.warning("No configuration found, using defaults.")
+        return {"api_key": "", "download_covers": True}
 
 class NoScrollComboBox(QComboBox):
     def wheelEvent(self, event):
@@ -253,7 +386,7 @@ class FolderScannerApp(QWidget):
                     "wait-all": "true",
                     "exit-timeout": "5",
                     "image-path": "",
-                    "working-dir": subfolder_path.replace("/", "\\") + "\\"
+                    "working-dir": "\"" + subfolder_path.replace("/", "\\") + "\""
                 })
         config = {
             "env": "",
