@@ -6,7 +6,7 @@ Just makes a `.json` with your selected EXE files sorted how you want.
 ## Screenshots
 
 ### Folder and Executable Selector
-![Folder and Executable Selector](screenshot1.png)
+![Folder and Executable Selector](screenshots/screenshot1.png)
 
 ### Sort JSON Entries
-![Sort JSON Entries](screenshot2.png)
+![Sort JSON Entries](screenshots/screenshot2.png)
