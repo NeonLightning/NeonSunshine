@@ -9,7 +9,7 @@ import imageio.v3 as iio
 import os, json, signal, requests, logging
 
 logging.basicConfig(
-    filename="steamgriddb_errors.log",
+    filename="NSS_errors.log",
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -197,30 +197,21 @@ class SortDialog(QDialog):
         url = f"https://www.steamgriddb.com/api/v2/grids/game/{game_id}"
         headers = {"Authorization": f"Bearer {api_key}"}
         try:
-            # Fetch grid data for the game
             response = requests.get(url, headers=headers)
             response.raise_for_status()
             grids = response.json().get("data", [])
             logging.debug(f"Grid data for {game_name}: {grids}")
-
             if grids:
-                # Download the first available image
                 image_url = grids[0]["url"]
                 response = requests.get(image_url, stream=True)
                 response.raise_for_status()
-
-                # Save the image as a PNG
                 image_dir = os.path.join(os.path.dirname(self.json_file_path), "covers")
                 os.makedirs(image_dir, exist_ok=True)
                 png_path = os.path.join(image_dir, f"{game_name}.png")
-
-                # Convert the image to PNG format
                 with open(png_path, "wb") as f:
                     f.write(response.content)
                 logging.info(f"Image saved as PNG for {game_name} at {png_path}")
-
                 return png_path
-
         except Exception as e:
             logging.error(f"Failed to download or save cover for {game_name}: {e}")
             QMessageBox.warning(self, "Error", f"Failed to download or save cover for {game_name}: {e}")
