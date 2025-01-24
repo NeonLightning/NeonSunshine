@@ -10,3 +10,6 @@ Just makes a `.json` with your selected EXE files sorted how you want.
 
 ### Sort JSON Entries
 ![Sort JSON Entries](screenshots/screenshot2.png)
+
+### Set Cover Downloding and API
+![Sort JSON Entries](screenshots/screenshot3.png)
