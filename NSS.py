@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QFileDialog,
-    QScrollArea, QComboBox, QMessageBox, QProgressDialog,
-    QDialog, QListWidget, QListWidgetItem
+    QScrollArea, QComboBox, QMessageBox, QProgressDialog, QSizePolicy,
+    QDialog, QListWidget, QListWidgetItem, QLineEdit, QHBoxLayout
 )
 from PyQt5.QtCore import Qt
 import os, json, signal
@@ -23,28 +23,85 @@ class SortDialog(QDialog):
             QPushButton:hover {
                 background-color: #555555;
             }
+            QLineEdit {
+                background-color: #3e3e3e;
+                color: #ffffff;
+                border: 1px solid #555555;
+            }
         """)
         self.apps = apps
         self.json_file_path = json_file_path
+        self.cmd_edits = {}
         layout = QVBoxLayout()
         self.setLayout(layout)
         self.list_widget = QListWidget(self)
         self.list_widget.setDragDropMode(QListWidget.InternalMove)
         for app in apps:
-            item = QListWidgetItem(app.get("name", "Unnamed App"))
-            self.list_widget.addItem(item)
+            item_widget = self.create_app_widget(app)
+            list_item = QListWidgetItem(self.list_widget)
+            list_item.setSizeHint(item_widget.sizeHint())
+            self.list_widget.addItem(list_item)
+            self.list_widget.setItemWidget(list_item, item_widget)
         layout.addWidget(self.list_widget)
         save_button = QPushButton("Save Sorted JSON")
         save_button.clicked.connect(self.save_sorted_json)
         layout.addWidget(save_button)
         self.showMaximized()
 
+    def create_app_widget(self, app):
+        widget = QWidget()
+        layout = QHBoxLayout()
+        widget.setLayout(layout)
+
+        # Label to show app name
+        name_label = QLabel(app.get("name", "Unnamed App"))
+        layout.addWidget(name_label)
+
+        # QLineEdit for editing command, initially hidden
+        cmd_edit = QLineEdit(app.get("cmd", ""))
+        cmd_edit.setPlaceholderText("Edit command...")
+        cmd_edit.setVisible(False)
+        layout.addWidget(cmd_edit)
+
+        # Set QLineEdit to expand and occupy most of the space
+        cmd_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        # Button to toggle editing
+        edit_button = QPushButton("Edit Command")
+        layout.addWidget(edit_button)
+
+        # Set button to a fixed size policy
+        edit_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        # Function to toggle between editing modes
+        def toggle_cmd_edit():
+            if cmd_edit.isVisible():
+                cmd_edit.setVisible(False)
+                edit_button.setText("Edit Command")  # Change back to "Edit Command"
+            else:
+                cmd_edit.setVisible(True)
+                cmd_edit.setFocus()
+                edit_button.setText("Done")  # Change to "Done"
+
+        # Connect the button click to toggle function
+        edit_button.clicked.connect(toggle_cmd_edit)
+
+        # Store QLineEdit reference
+        self.cmd_edits[app.get("name", "Unnamed App")] = cmd_edit
+
+        return widget
+
+
     def save_sorted_json(self):
         reordered_apps = []
         for i in range(self.list_widget.count()):
-            item_name = self.list_widget.item(i).text()
+            list_item = self.list_widget.item(i)
+            item_widget = self.list_widget.itemWidget(list_item)
+            name_label = item_widget.layout().itemAt(0).widget()
+            cmd_edit = self.cmd_edits[name_label.text()]
             for app in self.apps:
-                if app.get("name") == item_name:
+                if app.get("name") == name_label.text():
+                    app["cmd"] = cmd_edit.text()
                     reordered_apps.append(app)
                     break
         try:
