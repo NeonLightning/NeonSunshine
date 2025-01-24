@@ -98,6 +98,9 @@ class FolderScannerApp(QWidget):
         select_button = QPushButton("Add Folder")
         select_button.clicked.connect(self.select_folders)
         self.layout.addWidget(select_button)
+        load_sort_button = QPushButton("Load and Sort JSON")
+        load_sort_button.clicked.connect(self.load_and_sort_json)
+        self.layout.addWidget(load_sort_button)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_content = QWidget()
@@ -109,10 +112,25 @@ class FolderScannerApp(QWidget):
         save_button.clicked.connect(self.save_configuration)
         self.layout.addWidget(save_button)
 
+    def load_and_sort_json(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select JSON File", "", "JSON Files (*.json)")
+        if file_path:
+            try:
+                with open(file_path, 'r') as f:
+                    config = json.load(f)
+                if "apps" in config:
+                    apps = config["apps"]
+                    sort_dialog = SortDialog(apps, file_path, self)
+                    sort_dialog.exec_()
+                else:
+                    QMessageBox.warning(self, "Invalid JSON", "The selected JSON file does not contain an 'apps' key.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load JSON file: {e}")
+
     def select_folders(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
         if folder:
-            folder = folder.replace("/", "\\")  # Ensure backslashes
+            folder = folder.replace("/", "\\")
             self.base_folders.append(folder)
             self.scan_folders()
 
@@ -157,7 +175,6 @@ class FolderScannerApp(QWidget):
             for subfolder_path, data in subfolders.items():
                 subfolder_label = QLabel("Subfolder: " + os.path.basename(subfolder_path).replace("/", "\\"))  # Concatenation
                 self.scroll_layout.addWidget(subfolder_label)
-
                 combo_box = NoScrollComboBox()
                 combo_box.addItem("Skip")
                 combo_box.addItems(data["exe_files"])
