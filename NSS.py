@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-__version__ = "1.0.5"
+__version__ = "1.0.6"
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
