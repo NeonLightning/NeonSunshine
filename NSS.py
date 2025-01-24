@@ -95,7 +95,7 @@ class FolderScannerApp(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        select_button = QPushButton("Select Folders")
+        select_button = QPushButton("Add Folder")
         select_button.clicked.connect(self.select_folders)
         self.layout.addWidget(select_button)
         self.scroll_area = QScrollArea()
@@ -112,6 +112,7 @@ class FolderScannerApp(QWidget):
     def select_folders(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
         if folder:
+            folder = folder.replace("/", "\\")  # Ensure backslashes
             self.base_folders.append(folder)
             self.scan_folders()
 
@@ -150,12 +151,13 @@ class FolderScannerApp(QWidget):
             if widget:
                 widget.deleteLater()
         for base_folder, subfolders in self.executables.items():
-            base_label = QLabel(f"Base Folder: {base_folder}")
+            base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))  # Use concatenation
             base_label.setStyleSheet("font-weight: bold;")
             self.scroll_layout.addWidget(base_label)
             for subfolder_path, data in subfolders.items():
-                subfolder_label = QLabel(f"Subfolder: {os.path.basename(subfolder_path)}")
+                subfolder_label = QLabel("Subfolder: " + os.path.basename(subfolder_path).replace("/", "\\"))  # Concatenation
                 self.scroll_layout.addWidget(subfolder_label)
+
                 combo_box = NoScrollComboBox()
                 combo_box.addItem("Skip")
                 combo_box.addItems(data["exe_files"])
@@ -184,15 +186,15 @@ class FolderScannerApp(QWidget):
                     continue
                 flat_apps.append({
                     "name": os.path.basename(subfolder_path),
-                    "base_folder": base_folder,
-                    "cmd": data["selected_exe"],
+                    "base_folder": base_folder.replace("/", "\\"),
+                    "cmd": "\"" + data['selected_exe'].replace("/", "\\") + "\"",
                     "exclude-global-prep-cmd": "false",
                     "elevated": "false",
                     "auto-detach": "false",
                     "wait-all": "true",
                     "exit-timeout": "5",
                     "image-path": "",
-                    "working-dir": subfolder_path.replace("\\", "/") + "/"
+                    "working-dir": subfolder_path.replace("/", "\\") + "\\"
                 })
         config = {
             "env": "",
