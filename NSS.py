@@ -72,7 +72,7 @@ class SortDialog(QDialog):
                 cmd_edit.setVisible(True)
                 cmd_edit.setFocus()
                 edit_button.setText("Done")
-                edit_button.clicked.connect(toggle_cmd_edit)
+        edit_button.clicked.connect(toggle_cmd_edit)
         self.cmd_edits[app.get("name", "Unnamed App")] = cmd_edit
         return widget
 
