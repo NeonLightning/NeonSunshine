@@ -13,3 +13,7 @@ Just makes a `.json` with your selected EXE files sorted how you want.
 
 ### Set Cover Downloding and API
 ![Sort JSON Entries](screenshots/screenshot3.png)
+
+### Deps if running from py
+
+`imageio and pyQT`
