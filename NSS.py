@@ -96,6 +96,17 @@ class SortDialog(QDialog):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(10)
         widget.setLayout(layout)
+        drag_handle = QLabel("≡")
+        drag_handle.setFixedSize(20, 20)
+        drag_handle.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #555555;
+            }
+        """)
+        drag_handle.setAlignment(Qt.AlignLeft)
+        layout.addWidget(drag_handle)
         name_label = QLabel(app.get("name", "Unnamed App"))
         layout.addWidget(name_label)
         name_edit = QLineEdit(app.get("name", "Unnamed App"))
@@ -136,9 +147,13 @@ class SortDialog(QDialog):
 
         def toggle_cmd_edit():
             if cmd_edit.isVisible():
+                updated_cmd = cmd_edit.text().strip()
+                if updated_cmd:
+                    app["cmd"] = updated_cmd
                 cmd_edit.setVisible(False)
                 edit_button.setText("Edit Command")
             else:
+                cmd_edit.setText(app.get("cmd", ""))
                 cmd_edit.setVisible(True)
                 cmd_edit.setFocus()
                 edit_button.setText("Done")
@@ -157,6 +172,11 @@ class SortDialog(QDialog):
             self.config = config_dialog.get_config()
 
     def save_sorted_json(self):
+        if not self.json_file_path:
+            self.json_file_path, _ = QFileDialog.getSaveFileName(self, "Save Sorted JSON", "", "JSON Files (*.json)")
+            if not self.json_file_path:
+                QMessageBox.warning(self, "No File Selected", "Please select a file to save the sorted configuration.")
+                return
         reordered_apps = []
         progress_dialog = QProgressDialog("Please wait, this may take a few minutes...", "Cancel", 0, self.list_widget.count(), self)
         progress_dialog.setWindowTitle("Processing")
@@ -170,31 +190,18 @@ class SortDialog(QDialog):
                     return
                 list_item = self.list_widget.item(i)
                 item_widget = self.list_widget.itemWidget(list_item)
-                name_label = item_widget.layout().itemAt(0).widget()
+                progress_dialog.setValue(i)
+                name_label = item_widget.layout().itemAt(1).widget()
                 app_fields = self.cmd_edits[name_label.text()]
                 name_edit = app_fields["name_edit"]
                 cmd_edit = app_fields["cmd_edit"]
                 updated_name = name_edit.text()
                 for app in self.apps:
                     if app.get("name") == name_label.text():
-                        if app["name"] == "Desktop":
-                            app["image-path"] = "desktop.png"
-                            app["cmd"] = ""
-                        elif app["name"] == "Steam Big Picture":
-                            app["image-path"] = "steam.png"
-                            app["cmd"] = "steam://open/bigpicture"
-                            app["auto-detach"] = True
-                            app["wait-all"] = True
-                        else:
-                            app["name"] = updated_name
-                            app["cmd"] = cmd_edit.text()
-                            if self.config.get("download_covers"):
-                                image_path = self.fetch_game_image(updated_name)
-                                if image_path:
-                                    app["image-path"] = '"' + image_path.replace("/", "\\") + '"'
+                        app["name"] = updated_name
+                        app["cmd"] = cmd_edit.text()
                         reordered_apps.append(app)
                         break
-                progress_dialog.setValue(i + 1)
             with open(self.json_file_path, "w") as f:
                 json.dump({"env": "", "apps": reordered_apps}, f, indent=4)
             QMessageBox.information(self, "Success", f"Configuration saved to {self.json_file_path}")
@@ -203,8 +210,9 @@ class SortDialog(QDialog):
             logging.error(f"Failed to save JSON: {e}")
             QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
         finally:
+            progress_dialog.setValue(self.list_widget.count())
             progress_dialog.close()
-         
+
     def fetch_game_image(self, game_name):
         if game_name in ["Desktop", "Steam Big Picture"]:
             logging.info(f"Skipping image fetch for {game_name}")
@@ -340,6 +348,7 @@ class FolderScannerApp(QWidget):
                         working_dir = app.get("working-dir", "").strip("\"")
                         cmd = app.get("cmd", "").strip("\"")
                         image_path = app.get("image-path", "")
+                        name = app.get("name", "Unnamed App")
                         if working_dir:
                             base_folder = os.path.dirname(working_dir)
                             if base_folder not in self.executables:
@@ -349,12 +358,13 @@ class FolderScannerApp(QWidget):
                                 if cmd not in existing_data["exe_files"]:
                                     existing_data["exe_files"].append(cmd)
                                 existing_data["selected_exe"] = cmd
+                                existing_data["name"] = name
                             else:
-                                # Add new entry from JSON
                                 self.executables[base_folder][working_dir] = {
                                     "exe_files": [cmd] if cmd else [],
                                     "selected_exe": cmd if cmd else "Skip",
-                                    "image-path": image_path
+                                    "image-path": image_path,
+                                    "name": name
                                 }
                     QMessageBox.information(self, "Success", f"Loaded and merged {len(self.loaded_apps)} apps from {file_path}.")
                     self.scan_folders()
@@ -372,11 +382,13 @@ class FolderScannerApp(QWidget):
                     config = json.load(f)
                 if "apps" in config:
                     apps = config["apps"]
-                    sort_dialog = SortDialog(apps, file_path, self)
+                    logging.info(f"Loaded {len(apps)} apps from {file_path}")
+                    sort_dialog = SortDialog(apps, None, self)
                     sort_dialog.exec_()
                 else:
                     QMessageBox.warning(self, "Invalid JSON", "The selected JSON file does not contain an 'apps' key.")
             except Exception as e:
+                logging.error(f"Failed to load JSON file: {e}")
                 QMessageBox.critical(self, "Error", f"Failed to load JSON file: {e}")
 
     def select_folders(self):
@@ -455,7 +467,7 @@ class FolderScannerApp(QWidget):
             base_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.scroll_layout.addWidget(base_label)
             for subfolder_path, data in subfolders.items():
-                subfolder_label = QLabel("Subfolder: " + os.path.basename(subfolder_path).replace("/", "\\"))
+                subfolder_label = QLabel("Subfolder: " + os.path.basename(subfolder_path).replace("/", "\\") + " (" + data.get("name", "Unnamed") + ")")
                 subfolder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(subfolder_label)
                 combo_box = NoScrollComboBox()
@@ -487,7 +499,7 @@ class FolderScannerApp(QWidget):
                 if data["selected_exe"] == "Skip":
                     continue
                 flat_apps.append({
-                    "name": os.path.basename(subfolder_path),
+                    "name": data.get("name", os.path.basename(subfolder_path)),
                     "base_folder": base_folder.replace("/", "\\"),
                     "cmd": "\"" + data['selected_exe'].replace("/", "\\") + "\"",
                     "exclude-global-prep-cmd": "false",
@@ -504,19 +516,8 @@ class FolderScannerApp(QWidget):
                 entry.get("working-dir", "").strip("\"") for entry in flat_apps if "working-dir" in entry
             ]:
                 flat_apps.append(app)
-        config = {
-            "env": "",
-            "apps": flat_apps
-        }
-        output_file, _ = QFileDialog.getSaveFileName(self, "Save Configuration as JSON", "", "JSON Files (*.json)")
-        if output_file:
-            try:
-                with open(output_file, 'w') as f:
-                    json.dump(config, f, indent=4)
-                sort_dialog = SortDialog(flat_apps, output_file, self)
-                sort_dialog.exec_()
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
+        sort_dialog = SortDialog(flat_apps, None, self)
+        sort_dialog.exec_()
 
 def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
