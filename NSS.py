@@ -4,11 +4,13 @@ from PyQt5.QtWidgets import (
     QDialog, QListWidget, QListWidgetItem, QLineEdit, QHBoxLayout
 )
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon
 import os, json, signal
 
 class SortDialog(QDialog):
     def __init__(self, apps, json_file_path, parent=None):
         super().__init__(parent)
+        self.setWindowIcon(QIcon('icon.ico'))
         self.setWindowTitle("Sort JSON Entries")
         self.setStyleSheet("""
             QWidget {
@@ -52,45 +54,27 @@ class SortDialog(QDialog):
         widget = QWidget()
         layout = QHBoxLayout()
         widget.setLayout(layout)
-
-        # Label to show app name
         name_label = QLabel(app.get("name", "Unnamed App"))
         layout.addWidget(name_label)
-
-        # QLineEdit for editing command, initially hidden
         cmd_edit = QLineEdit(app.get("cmd", ""))
         cmd_edit.setPlaceholderText("Edit command...")
         cmd_edit.setVisible(False)
         layout.addWidget(cmd_edit)
-
-        # Set QLineEdit to expand and occupy most of the space
         cmd_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        # Button to toggle editing
         edit_button = QPushButton("Edit Command")
         layout.addWidget(edit_button)
-
-        # Set button to a fixed size policy
         edit_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-
-        # Function to toggle between editing modes
         def toggle_cmd_edit():
             if cmd_edit.isVisible():
                 cmd_edit.setVisible(False)
-                edit_button.setText("Edit Command")  # Change back to "Edit Command"
+                edit_button.setText("Edit Command")
             else:
                 cmd_edit.setVisible(True)
                 cmd_edit.setFocus()
-                edit_button.setText("Done")  # Change to "Done"
-
-        # Connect the button click to toggle function
-        edit_button.clicked.connect(toggle_cmd_edit)
-
-        # Store QLineEdit reference
+                edit_button.setText("Done")
+                edit_button.clicked.connect(toggle_cmd_edit)
         self.cmd_edits[app.get("name", "Unnamed App")] = cmd_edit
-
         return widget
-
 
     def save_sorted_json(self):
         reordered_apps = []
@@ -120,6 +104,7 @@ class NoScrollComboBox(QComboBox):
 class FolderScannerApp(QWidget):
     def __init__(self):
         super().__init__()
+        self.setWindowIcon(QIcon('icon.ico'))
         self.FILTER_KEYWORDS = ['uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler', 'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643', 'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864', 'vc_redist.x644', 'oalinst']
         self.setWindowTitle("Folder and Executable Selector")
         self.setStyleSheet("""
