@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-__version__ = "1.0.3"
+__version__ = "1.0.5"
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -98,6 +98,33 @@ class SortDialog(QDialog):
         widget.setLayout(layout)
         name_label = QLabel(app.get("name", "Unnamed App"))
         layout.addWidget(name_label)
+        name_edit = QLineEdit(app.get("name", "Unnamed App"))
+        name_edit.setVisible(False)
+        layout.addWidget(name_edit)
+        name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        def toggle_name_edit():
+            if name_edit.isVisible():
+                updated_name = name_edit.text().strip()
+                if updated_name:
+                    old_name = name_label.text()
+                    name_label.setText(updated_name)
+                    name_label.setVisible(True)
+                    name_edit.setVisible(False)
+                    self.cmd_edits[updated_name] = self.cmd_edits.pop(old_name)
+                    self.cmd_edits[updated_name]["name_edit"] = name_edit
+                    for app_item in self.apps:
+                        if app_item.get("name") == old_name:
+                            app_item["name"] = updated_name
+                            break
+            else:
+                name_edit.setText(name_label.text())
+                name_label.setVisible(False)
+                name_edit.setVisible(True)
+                name_edit.setFocus()
+
+        name_label.mousePressEvent = lambda event: toggle_name_edit()
+        name_edit.editingFinished.connect(toggle_name_edit)
         cmd_edit = QLineEdit(app.get("cmd", ""))
         cmd_edit.setPlaceholderText("Edit command...")
         cmd_edit.setVisible(False)
@@ -106,6 +133,7 @@ class SortDialog(QDialog):
         edit_button = QPushButton("Edit Command")
         layout.addWidget(edit_button)
         edit_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
         def toggle_cmd_edit():
             if cmd_edit.isVisible():
                 cmd_edit.setVisible(False)
@@ -114,8 +142,13 @@ class SortDialog(QDialog):
                 cmd_edit.setVisible(True)
                 cmd_edit.setFocus()
                 edit_button.setText("Done")
+
         edit_button.clicked.connect(toggle_cmd_edit)
-        self.cmd_edits[app.get("name", "Unnamed App")] = cmd_edit
+        self.cmd_edits[app.get("name", "Unnamed App")] = {
+            "name_label": name_label,
+            "name_edit": name_edit,
+            "cmd_edit": cmd_edit
+        }
         return widget
 
     def open_config_dialog(self):
@@ -138,7 +171,10 @@ class SortDialog(QDialog):
                 list_item = self.list_widget.item(i)
                 item_widget = self.list_widget.itemWidget(list_item)
                 name_label = item_widget.layout().itemAt(0).widget()
-                cmd_edit = self.cmd_edits[name_label.text()]
+                app_fields = self.cmd_edits[name_label.text()]
+                name_edit = app_fields["name_edit"]
+                cmd_edit = app_fields["cmd_edit"]
+                updated_name = name_edit.text()
                 for app in self.apps:
                     if app.get("name") == name_label.text():
                         if app["name"] == "Desktop":
@@ -147,12 +183,13 @@ class SortDialog(QDialog):
                         elif app["name"] == "Steam Big Picture":
                             app["image-path"] = "steam.png"
                             app["cmd"] = "steam://open/bigpicture"
-                            app["auto-detatch"] = True
+                            app["auto-detach"] = True
                             app["wait-all"] = True
                         else:
+                            app["name"] = updated_name
                             app["cmd"] = cmd_edit.text()
                             if self.config.get("download_covers"):
-                                image_path = self.fetch_game_image(name_label.text())
+                                image_path = self.fetch_game_image(updated_name)
                                 if image_path:
                                     app["image-path"] = '"' + image_path.replace("/", "\\") + '"'
                         reordered_apps.append(app)
@@ -167,7 +204,7 @@ class SortDialog(QDialog):
             QMessageBox.critical(self, "Error", f"Failed to save configuration: {e}")
         finally:
             progress_dialog.close()
-            
+         
     def fetch_game_image(self, game_name):
         if game_name in ["Desktop", "Steam Big Picture"]:
             logging.info(f"Skipping image fetch for {game_name}")
@@ -238,7 +275,7 @@ class FolderScannerApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowIcon(QIcon('icon.ico'))
-        self.FILTER_KEYWORDS = ['uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler', 'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643', 'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864', 'vc_redist.x644', 'oalinst']
+        self.FILTER_KEYWORDS = ['uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler', 'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643', 'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864', 'vc_redist.x644', 'oalinst', 'vc_redistx86', 'vc_redistx64', 'vc_redistx64']
         self.setWindowTitle("Folder and Executable Selector")
         self.setStyleSheet("""
             QWidget {
@@ -267,9 +304,13 @@ class FolderScannerApp(QWidget):
         self.setLayout(self.layout)
         self.base_folders = []
         self.executables = {}
+        self.loaded_apps = []
         self.init_ui()
 
     def init_ui(self):
+        load_json_button = QPushButton("Load JSON")
+        load_json_button.clicked.connect(self.load_json)
+        self.layout.addWidget(load_json_button)
         select_button = QPushButton("Add Folder")
         select_button.clicked.connect(self.select_folders)
         self.layout.addWidget(select_button)
@@ -283,9 +324,45 @@ class FolderScannerApp(QWidget):
         self.scroll_content.setLayout(self.scroll_layout)
         self.scroll_area.setWidget(self.scroll_content)
         self.layout.addWidget(self.scroll_area)
-        save_button = QPushButton("Save Configuration")
+        save_button = QPushButton("Sort Configuration")
         save_button.clicked.connect(self.save_configuration)
         self.layout.addWidget(save_button)
+
+    def load_json(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select JSON File to Load", "", "JSON Files (*.json)")
+        if file_path:
+            try:
+                with open(file_path, "r") as f:
+                    config = json.load(f)
+                if "apps" in config:
+                    self.loaded_apps = config["apps"]
+                    for app in self.loaded_apps:
+                        working_dir = app.get("working-dir", "").strip("\"")
+                        cmd = app.get("cmd", "").strip("\"")
+                        image_path = app.get("image-path", "")
+                        if working_dir:
+                            base_folder = os.path.dirname(working_dir)
+                            if base_folder not in self.executables:
+                                self.executables[base_folder] = {}
+                            if working_dir in self.executables[base_folder]:
+                                existing_data = self.executables[base_folder][working_dir]
+                                if cmd not in existing_data["exe_files"]:
+                                    existing_data["exe_files"].append(cmd)
+                                existing_data["selected_exe"] = cmd
+                            else:
+                                # Add new entry from JSON
+                                self.executables[base_folder][working_dir] = {
+                                    "exe_files": [cmd] if cmd else [],
+                                    "selected_exe": cmd if cmd else "Skip",
+                                    "image-path": image_path
+                                }
+                    QMessageBox.information(self, "Success", f"Loaded and merged {len(self.loaded_apps)} apps from {file_path}.")
+                    self.scan_folders()
+                else:
+                    QMessageBox.warning(self, "Invalid JSON", "The selected file does not contain an 'apps' key.")
+            except Exception as e:
+                logging.error(f"Failed to load JSON: {e}")
+                QMessageBox.critical(self, "Error", f"Failed to load JSON: {e}")
 
     def load_and_sort_json(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select JSON File", "", "JSON Files (*.json)")
@@ -316,9 +393,9 @@ class FolderScannerApp(QWidget):
         progress_dialog.setWindowModality(Qt.ApplicationModal)
         progress_dialog.show()
         QApplication.processEvents()
-        self.executables = {}
         for folder in self.base_folders:
-            subfolder_data = {}
+            if folder not in self.executables:
+                self.executables[folder] = {}
             for subfolder in os.listdir(folder):
                 subfolder_path = os.path.join(folder, subfolder)
                 if os.path.isdir(subfolder_path):
@@ -328,13 +405,41 @@ class FolderScannerApp(QWidget):
                             os.path.join(root, f) for f in files
                             if f.endswith('.exe') and not any(kw in f.lower() for kw in self.FILTER_KEYWORDS)
                         )
-                    if exe_files:
-                        subfolder_data[subfolder_path] = {
+                    if subfolder_path in self.executables[folder]:
+                        existing_data = self.executables[folder][subfolder_path]
+                        existing_data["exe_files"] = list(set(existing_data["exe_files"] + exe_files))
+                    else:
+                        self.executables[folder][subfolder_path] = {
                             "exe_files": exe_files,
-                            "selected_exe": "Skip"
+                            "selected_exe": "Skip",
+                            "image-path": ""
                         }
-            if subfolder_data:
-                self.executables[folder] = subfolder_data
+        for app in self.loaded_apps:
+            working_dir = app.get("working-dir", "").strip("\"")
+            cmd = app.get("cmd", "").strip("\"")
+            image_path = app.get("image-path", "")
+            if working_dir:
+                base_folder = os.path.dirname(working_dir)
+                if base_folder not in self.executables:
+                    self.executables[base_folder] = {}
+                if working_dir in self.executables[base_folder]:
+                    existing_data = self.executables[base_folder][working_dir]
+                    if cmd and cmd not in existing_data["exe_files"]:
+                        existing_data["exe_files"].append(cmd)
+                    existing_data["selected_exe"] = cmd if cmd else existing_data.get("selected_exe", "Skip")
+                    existing_data["image-path"] = image_path or existing_data.get("image-path", "")
+                else:
+                    exe_files = []
+                    for root, _, files in os.walk(working_dir):
+                        exe_files.extend(
+                            os.path.join(root, f) for f in files
+                            if f.endswith('.exe') and not any(kw in f.lower() for kw in self.FILTER_KEYWORDS)
+                        )
+                    self.executables[base_folder][working_dir] = {
+                        "exe_files": exe_files,
+                        "selected_exe": cmd if cmd else "Skip",
+                        "image-path": image_path
+                    }
         progress_dialog.close()
         self.update_gui()
 
@@ -343,17 +448,22 @@ class FolderScannerApp(QWidget):
             widget = self.scroll_layout.takeAt(i).widget()
             if widget:
                 widget.deleteLater()
+        self.scroll_layout.setAlignment(Qt.AlignTop)
         for base_folder, subfolders in self.executables.items():
-            base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))  # Use concatenation
+            base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))
             base_label.setStyleSheet("font-weight: bold;")
+            base_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.scroll_layout.addWidget(base_label)
             for subfolder_path, data in subfolders.items():
-                subfolder_label = QLabel("Subfolder: " + os.path.basename(subfolder_path).replace("/", "\\"))  # Concatenation
+                subfolder_label = QLabel("Subfolder: " + os.path.basename(subfolder_path).replace("/", "\\"))
+                subfolder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(subfolder_label)
                 combo_box = NoScrollComboBox()
                 combo_box.addItem("Skip")
                 combo_box.addItems(data["exe_files"])
+                combo_box.setCurrentText(data["selected_exe"])
                 combo_box.currentTextChanged.connect(lambda selected, data=data: self.update_selected_exe(data, selected))
+                combo_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(combo_box)
 
     def update_selected_exe(self, subfolder_data, selected_exe):
@@ -385,9 +495,15 @@ class FolderScannerApp(QWidget):
                     "auto-detach": "false",
                     "wait-all": "true",
                     "exit-timeout": "5",
-                    "image-path": "",
+                    "image-path": data.get("image-path", ""),
                     "working-dir": "\"" + subfolder_path.replace("/", "\\") + "\""
                 })
+        for app in self.loaded_apps:
+            working_dir = app.get("working-dir", "").strip("\"")
+            if working_dir and working_dir not in [
+                entry.get("working-dir", "").strip("\"") for entry in flat_apps if "working-dir" in entry
+            ]:
+                flat_apps.append(app)
         config = {
             "env": "",
             "apps": flat_apps
