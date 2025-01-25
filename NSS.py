@@ -6,7 +6,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from functools import partial
-import imageio.v3 as iio
 import os, json, signal, requests, logging
 
 logging.basicConfig(
@@ -224,26 +223,32 @@ class SortDialog(QDialog):
                     if app.get("name") == name_label.text():
                         app["name"] = updated_name
                         app["cmd"] = updated_cmd
-                        current_image_path = app.get("image-path", "")
-                        expected_image_name = f"{updated_name}.png"
-                        if (
-                            not current_image_path or
-                            os.path.basename(current_image_path) != expected_image_name or
-                            not os.path.exists(current_image_path)
-                        ):
-                            if self.download_covers:
-                                logging.debug(f"Fetching new cover for: {updated_name}")
-                                image_path = self.fetch_game_image(updated_name)
-                                if image_path:
-                                    app["image-path"] = image_path
-                                    logging.debug(f"Updated image-path for {updated_name}: {image_path}")
-                                else:
-                                    logging.warning(f"No image found for {updated_name}")
-                            else:
-                                app["image-path"] = None
-                                logging.debug(f"Cleared image-path for {updated_name} as downloading is disabled.")
+                        if updated_name == "Desktop":
+                            app["image-path"] = "desktop.png"
+                        elif updated_name == "Steam Big Picture":
+                            app["image-path"] = "steam.png"
                         else:
-                            logging.debug(f"Image-path for {updated_name} is up-to-date: {current_image_path}")
+                            current_image_path = app.get("image-path", "")
+                            expected_image_name = f"{updated_name}.png"
+                            if (
+                                not current_image_path or
+                                os.path.basename(current_image_path) != expected_image_name or
+                                not os.path.exists(current_image_path)
+                            ):
+                                if self.download_covers:
+                                    logging.debug(f"Fetching new cover for: {updated_name}")
+                                    image_path = self.fetch_game_image(updated_name)
+                                    if image_path:
+                                        app["image-path"] = image_path
+                                        logging.debug(f"Updated image-path for {updated_name}: {image_path}")
+                                    else:
+                                        logging.warning(f"No image found for {updated_name}")
+                                else:
+                                    app["image-path"] = None
+                                    logging.debug(f"Cleared image-path for {updated_name} as downloading is disabled.")
+                            else:
+                                logging.debug(f"Image-path for {updated_name} is up-to-date: {current_image_path}")
+
                         reordered_apps.append(app)
                         break
             with open(self.json_file_path, "w") as f:
