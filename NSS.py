@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-__version__ = "1.0.10"
+__version__ = "1.0.11"
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -393,19 +393,21 @@ class FolderScannerApp(QWidget):
                 raise ValueError("Invalid JSON format: 'apps' is not a list.")
 
             self.executables.setdefault("Special", {})
+            loaded_app_names = {app.get("name", "") for app in config["apps"] if isinstance(app, dict)}
+
             special_entries = {
                 "Desktop": {
                     "name": "Desktop",
                     "cmd": None,
                     "image-path": "desktop.png",
-                    "selected_exe": "Include",
+                    "selected_exe": "Include" if "Desktop" in loaded_app_names else "Skip",
                     "exe_files": ["Skip", "Include"]
                 },
                 "Steam Big Picture": {
                     "name": "Steam Big Picture",
                     "cmd": "steam://open/bigpicture",
                     "image-path": "steam.png",
-                    "selected_exe": "Include",
+                    "selected_exe": "Include" if "Steam Big Picture" in loaded_app_names else "Skip",
                     "exe_files": ["Skip", "Include"]
                 }
             }
