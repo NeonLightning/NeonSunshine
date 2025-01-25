@@ -70,7 +70,10 @@ class SortDialog(QDialog):
         self.apps = apps
         self.json_file_path = json_file_path
         self.cmd_edits = {}
-        self.config = self.load_config()
+        self.config_dialog = ConfigDialog(self)
+        self.config = self.config_dialog.get_config()
+        self.download_covers = self.config.get("download_covers", True)
+        self.download_covers = self.config.get("download_covers", False)
         layout = QVBoxLayout()
         self.setLayout(layout)
         self.list_widget = QListWidget(self)
@@ -89,6 +92,12 @@ class SortDialog(QDialog):
         save_button.clicked.connect(self.save_sorted_json)
         layout.addWidget(save_button)
         self.showMaximized()
+
+    def open_config_dialog(self):
+        config_dialog = ConfigDialog(self)
+        if config_dialog.exec_():
+            self.config = config_dialog.get_config()
+            self.download_covers = self.config.get("download_covers", True)
 
     def create_app_widget(self, app):
         widget = QWidget()
@@ -199,7 +208,12 @@ class SortDialog(QDialog):
                 for app in self.apps:
                     if app.get("name") == name_label.text():
                         app["name"] = updated_name
-                        app["cmd"] = cmd_edit.text()
+                        app["cmd"] = cmd_edit.text().replace("\\", "/")
+                        if self.download_covers and not app.get("image-path"):
+                            image_path = self.fetch_game_image(updated_name)
+                            if image_path:
+                                app["image-path"] = image_path
+
                         reordered_apps.append(app)
                         break
             with open(self.json_file_path, "w") as f:
@@ -261,19 +275,6 @@ class SortDialog(QDialog):
             logging.error(f"Failed to download or save cover for {game_name}: {e}")
             QMessageBox.warning(self, "Error", f"Failed to download or save cover for {game_name}: {e}")
         return None
-
-    def load_config(self):
-        config_file = "NSS-config.json"
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, "r") as f:
-                    config = json.load(f)
-                    logging.info("Configuration loaded successfully.")
-                    return config
-            except Exception as e:
-                logging.error(f"Failed to load configuration: {e}")
-        logging.warning("No configuration found, using defaults.")
-        return {"api_key": "", "download_covers": True}
 
 class NoScrollComboBox(QComboBox):
     def wheelEvent(self, event):
