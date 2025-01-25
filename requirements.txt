@@ -1,0 +1,11 @@
+certifi==2024.12.14
+charset-normalizer==3.4.1
+idna==3.10
+imageio==2.37.0
+numpy==2.2.2
+pillow==11.1.0
+PyQt5==5.15.11
+PyQt5-Qt5==5.15.2
+PyQt5_sip==12.16.1
+requests==2.32.3
+urllib3==2.3.0
