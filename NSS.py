@@ -373,9 +373,9 @@ class FolderScannerApp(QWidget):
         for category, subfolders in list(self.executables.items()):
             if category == "Special":
                 continue
-            for name in list(subfolders.keys()):
-                if name in special_names:
-                    del subfolders[name]
+            for key, data in list(subfolders.items()):
+                if data.get("name") in special_names:
+                    del subfolders[key]
 
     def load_json(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select JSON File to Load", "", "JSON Files (*.json)")
@@ -384,8 +384,14 @@ class FolderScannerApp(QWidget):
         try:
             with open(file_path, "r") as f:
                 config = json.load(f)
-            if not isinstance(config, dict) or "apps" not in config or not isinstance(config["apps"], list):
-                raise ValueError("Invalid JSON format: 'apps' key must contain a list.")
+            logging.debug(f"Loaded JSON: {config}")
+
+            if not isinstance(config, dict):
+                raise ValueError("Invalid JSON format: Root is not a dictionary.")
+            if "apps" not in config:
+                raise ValueError("Invalid JSON format: Missing 'apps' key.")
+            if not isinstance(config["apps"], list):
+                raise ValueError("Invalid JSON format: 'apps' is not a list.")
             self.executables.setdefault("Special", {})
             special_entries = {
                 "Desktop": {
@@ -405,7 +411,11 @@ class FolderScannerApp(QWidget):
             }
             for key, entry in special_entries.items():
                 self.executables["Special"][key] = entry
-            for app in config["apps"]:
+            for index, app in enumerate(config["apps"]):
+                if not isinstance(app, dict):
+                    logging.warning(f"Skipping invalid app at index {index}: {app}")
+                    continue
+                logging.debug(f"Processing app at index {index}: {app}")
                 name = app.get("name", "Unnamed App")
                 if name in special_entries:
                     continue
@@ -468,24 +478,24 @@ class FolderScannerApp(QWidget):
         progress_dialog.show()
         QApplication.processEvents()
         self.executables.setdefault("Special", {})
-        special_entries = {
-            "Desktop": {
+        special_entries = [
+            {
                 "name": "Desktop",
                 "cmd": None,
                 "image-path": "desktop.png",
                 "selected_exe": "Include",
                 "exe_files": ["Skip", "Include"]
             },
-            "Steam Big Picture": {
+            {
                 "name": "Steam Big Picture",
                 "cmd": "steam://open/bigpicture",
                 "image-path": "steam.png",
                 "selected_exe": "Include",
                 "exe_files": ["Skip", "Include"]
             }
-        }
-        for key, entry in special_entries.items():
-            self.executables["Special"][key] = entry
+        ]
+        for entry in special_entries:
+            self.executables["Special"][entry["name"]] = entry
         for folder in self.base_folders:
             folder = os.path.normpath(folder)
             self.executables.setdefault(folder, {})
@@ -514,7 +524,6 @@ class FolderScannerApp(QWidget):
             widget = self.scroll_layout.takeAt(i).widget()
             if widget:
                 widget.deleteLater()
-
         self.scroll_layout.setAlignment(Qt.AlignTop)
         special_entries = self.executables.get("Special", {})
         if special_entries:
@@ -539,7 +548,7 @@ class FolderScannerApp(QWidget):
             base_label.setStyleSheet("font-weight: bold;")
             base_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.scroll_layout.addWidget(base_label)
-            for data in subfolders.items():
+            for key, data in subfolders.items():
                 subfolder_label = QLabel(f"Entry: {data['name']}")
                 subfolder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(subfolder_label)
