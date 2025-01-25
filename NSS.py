@@ -72,7 +72,6 @@ class SortDialog(QDialog):
         self.cmd_edits = {}
         self.config_dialog = ConfigDialog(self)
         self.config = self.config_dialog.get_config()
-        self.download_covers = self.config.get("download_covers", True)
         self.download_covers = self.config.get("download_covers", False)
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -86,9 +85,11 @@ class SortDialog(QDialog):
             self.list_widget.setItemWidget(list_item, item_widget)
         layout.addWidget(self.list_widget)
         config_button = QPushButton("Configure")
+        config_button.setFocusPolicy(Qt.NoFocus)
         config_button.clicked.connect(self.open_config_dialog)
         layout.addWidget(config_button)
         save_button = QPushButton("Save Sorted JSON")
+        save_button.setFocusPolicy(Qt.NoFocus)
         save_button.clicked.connect(self.save_sorted_json)
         layout.addWidget(save_button)
         self.showMaximized()
@@ -115,14 +116,29 @@ class SortDialog(QDialog):
             }
         """)
         drag_handle.setAlignment(Qt.AlignLeft)
+        drag_handle.setFocusPolicy(Qt.NoFocus)
         layout.addWidget(drag_handle)
         name_label = QLabel(app.get("name", "Unnamed App"))
+        name_label.setFocusPolicy(Qt.NoFocus)
         layout.addWidget(name_label)
         name_edit = QLineEdit(app.get("name", "Unnamed App"))
         name_edit.setVisible(False)
-        layout.addWidget(name_edit)
         name_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
+        layout.addWidget(name_edit)
+        cmd_edit = QLineEdit(app.get("cmd", ""))
+        cmd_edit.setPlaceholderText("Edit command...")
+        cmd_edit.setVisible(False)
+        cmd_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        layout.addWidget(cmd_edit)
+        edit_button = QPushButton("Edit Command")
+        edit_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        edit_button.setFocusPolicy(Qt.NoFocus)
+        layout.addWidget(edit_button)
+        self.cmd_edits[app.get("name", "Unnamed App")] = {
+            "name_label": name_label,
+            "name_edit": name_edit,
+            "cmd_edit": cmd_edit
+        }
         def toggle_name_edit():
             if name_edit.isVisible():
                 updated_name = name_edit.text().strip()
@@ -143,17 +159,6 @@ class SortDialog(QDialog):
                 name_edit.setVisible(True)
                 name_edit.setFocus()
 
-        name_label.mousePressEvent = lambda event: toggle_name_edit()
-        name_edit.editingFinished.connect(toggle_name_edit)
-        cmd_edit = QLineEdit(app.get("cmd", ""))
-        cmd_edit.setPlaceholderText("Edit command...")
-        cmd_edit.setVisible(False)
-        layout.addWidget(cmd_edit)
-        cmd_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        edit_button = QPushButton("Edit Command")
-        layout.addWidget(edit_button)
-        edit_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-
         def toggle_cmd_edit():
             if cmd_edit.isVisible():
                 updated_cmd = cmd_edit.text().strip()
@@ -167,12 +172,22 @@ class SortDialog(QDialog):
                 cmd_edit.setFocus()
                 edit_button.setText("Done")
 
+        def handle_enter_key(event):
+            if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+                focused_widget = QApplication.focusWidget()
+                if focused_widget == name_edit and name_edit.isVisible():
+                    toggle_name_edit()
+                    return
+                elif focused_widget == cmd_edit and cmd_edit.isVisible():
+                    toggle_cmd_edit()
+                    return
+            event.ignore()
+
+        name_label.mousePressEvent = lambda event: toggle_name_edit()
+        name_edit.editingFinished.connect(toggle_name_edit)
+        cmd_edit.editingFinished.connect(toggle_cmd_edit)
         edit_button.clicked.connect(toggle_cmd_edit)
-        self.cmd_edits[app.get("name", "Unnamed App")] = {
-            "name_label": name_label,
-            "name_edit": name_edit,
-            "cmd_edit": cmd_edit
-        }
+        widget.keyPressEvent = handle_enter_key
         return widget
 
     def open_config_dialog(self):
@@ -204,16 +219,33 @@ class SortDialog(QDialog):
                 app_fields = self.cmd_edits[name_label.text()]
                 name_edit = app_fields["name_edit"]
                 cmd_edit = app_fields["cmd_edit"]
-                updated_name = name_edit.text()
+                updated_name = name_edit.text().strip()
+                updated_cmd = cmd_edit.text().strip().replace("\\", "/")
                 for app in self.apps:
                     if app.get("name") == name_label.text():
                         app["name"] = updated_name
-                        app["cmd"] = cmd_edit.text().replace("\\", "/")
-                        if self.download_covers and not app.get("image-path"):
-                            image_path = self.fetch_game_image(updated_name)
-                            if image_path:
-                                app["image-path"] = image_path
-
+                        app["cmd"] = updated_cmd
+                        current_image_path = app.get("image-path", "")
+                        expected_image_name = f"{updated_name}.png"
+                        expected_image_path = os.path.join(os.path.dirname(self.json_file_path), "covers", expected_image_name)
+                        if (
+                            not current_image_path or
+                            os.path.basename(current_image_path) != expected_image_name or
+                            not os.path.exists(current_image_path)
+                        ):
+                            if self.download_covers:
+                                logging.debug(f"Fetching new cover for: {updated_name}")
+                                image_path = self.fetch_game_image(updated_name)
+                                if image_path:
+                                    app["image-path"] = image_path
+                                    logging.debug(f"Updated image-path for {updated_name}: {image_path}")
+                                else:
+                                    logging.warning(f"No image found for {updated_name}")
+                            else:
+                                app["image-path"] = None
+                                logging.debug(f"Cleared image-path for {updated_name} as downloading is disabled.")
+                        else:
+                            logging.debug(f"Image-path for {updated_name} is up-to-date: {current_image_path}")
                         reordered_apps.append(app)
                         break
             with open(self.json_file_path, "w") as f:
