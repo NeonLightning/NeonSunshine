@@ -1,5 +1,5 @@
 # NeonSunshine
-Program to add games to a JSON in sunchine's `app.json` format.
+Program to add games to a JSON in sunshine's `app.json` format.
 
 Just makes a `.json` with your selected EXE files sorted how you want.
 
