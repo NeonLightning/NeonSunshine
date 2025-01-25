@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
+from functools import partial
 import imageio.v3 as iio
 import os, json, signal, requests, logging
 
@@ -13,7 +14,7 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-__version__ = "1.0.6"
+__version__ = "1.0.9"
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -139,6 +140,7 @@ class SortDialog(QDialog):
             "name_edit": name_edit,
             "cmd_edit": cmd_edit
         }
+
         def toggle_name_edit():
             if name_edit.isVisible():
                 updated_name = name_edit.text().strip()
@@ -171,23 +173,20 @@ class SortDialog(QDialog):
                 cmd_edit.setVisible(True)
                 cmd_edit.setFocus()
                 edit_button.setText("Done")
-
+                
         def handle_enter_key(event):
-            if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
-                focused_widget = QApplication.focusWidget()
-                if focused_widget == name_edit and name_edit.isVisible():
-                    toggle_name_edit()
-                    return
-                elif focused_widget == cmd_edit and cmd_edit.isVisible():
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                if cmd_edit.isVisible():
                     toggle_cmd_edit()
                     return
             event.ignore()
 
         name_label.mousePressEvent = lambda event: toggle_name_edit()
-        name_edit.editingFinished.connect(toggle_name_edit)
-        cmd_edit.editingFinished.connect(toggle_cmd_edit)
+        name_edit.returnPressed.connect(toggle_name_edit)
+        name_edit.editingFinished.connect(lambda: None)
         edit_button.clicked.connect(toggle_cmd_edit)
-        widget.keyPressEvent = handle_enter_key
+        cmd_edit.keyPressEvent = handle_enter_key
+        cmd_edit.editingFinished.connect(lambda: None)
         return widget
 
     def open_config_dialog(self):
@@ -227,7 +226,6 @@ class SortDialog(QDialog):
                         app["cmd"] = updated_cmd
                         current_image_path = app.get("image-path", "")
                         expected_image_name = f"{updated_name}.png"
-                        expected_image_path = os.path.join(os.path.dirname(self.json_file_path), "covers", expected_image_name)
                         if (
                             not current_image_path or
                             os.path.basename(current_image_path) != expected_image_name or
@@ -260,9 +258,6 @@ class SortDialog(QDialog):
             progress_dialog.close()
 
     def fetch_game_image(self, game_name):
-        if game_name in ["Desktop", "Steam Big Picture"]:
-            logging.info(f"Skipping image fetch for {game_name}")
-            return None
         api_key = self.config.get("api_key")
         if not api_key:
             logging.error("SteamGridDB API Key is not configured.")
@@ -275,7 +270,6 @@ class SortDialog(QDialog):
             response.raise_for_status()
             results = response.json().get("data", [])
             logging.debug(f"SteamGridDB response for {game_name}: {results}")
-
             if results:
                 game_id = results[0]["id"]
                 return self.download_cover(game_id, game_name, api_key)
@@ -371,41 +365,66 @@ class FolderScannerApp(QWidget):
 
     def load_json(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select JSON File to Load", "", "JSON Files (*.json)")
-        if file_path:
-            try:
-                with open(file_path, "r") as f:
-                    config = json.load(f)
-                if "apps" in config:
-                    self.loaded_apps = config["apps"]
-                    for app in self.loaded_apps:
-                        working_dir = app.get("working-dir", "").strip("\"")
-                        cmd = app.get("cmd", "").strip("\"")
-                        image_path = app.get("image-path", "")
-                        name = app.get("name", "Unnamed App")
-                        if working_dir:
-                            base_folder = os.path.dirname(working_dir)
-                            if base_folder not in self.executables:
-                                self.executables[base_folder] = {}
-                            if working_dir in self.executables[base_folder]:
-                                existing_data = self.executables[base_folder][working_dir]
-                                if cmd not in existing_data["exe_files"]:
-                                    existing_data["exe_files"].append(cmd)
-                                existing_data["selected_exe"] = cmd
-                                existing_data["name"] = name
-                            else:
-                                self.executables[base_folder][working_dir] = {
-                                    "exe_files": [cmd] if cmd else [],
-                                    "selected_exe": cmd if cmd else "Skip",
-                                    "image-path": image_path,
-                                    "name": name
-                                }
-                    QMessageBox.information(self, "Success", f"Loaded and merged {len(self.loaded_apps)} apps from {file_path}.")
-                    self.scan_folders()
+        if not file_path:
+            return
+        try:
+            with open(file_path, "r") as f:
+                config = json.load(f)
+            if not isinstance(config, dict) or "apps" not in config or not isinstance(config["apps"], list):
+                raise ValueError("Invalid JSON format: 'apps' key must contain a list.")
+            for app in config["apps"]:
+                if not isinstance(app, dict):
+                    logging.warning(f"Skipping invalid app entry: {app}")
+                    continue
+                name = app.get("name", "Unnamed App")
+                cmd = os.path.normpath(app.get("cmd", "").strip("\"")) if app.get("cmd") else ""
+                image_path = app.get("image-path", "")
+                working_dir = os.path.normpath(app.get("working-dir", "").strip("\"")) if app.get("working-dir") else ""
+                if name in self.executables.get("Special", {}) or working_dir in [
+                    wd for base in self.executables.values() for wd in base
+                ]:
+                    continue
+                if name in ["Desktop", "Steam Big Picture"]:
+                    self.executables.setdefault("Special", {})[name] = {
+                        "exe_files": ["Skip", "Include"],  # Ensure "Skip" is the first entry
+                        "selected_exe": "Include" if cmd or name == "Desktop" else "Skip",
+                        "image-path": image_path,
+                        "name": name
+                    }
+                elif working_dir:
+                    base_folder = os.path.dirname(working_dir)
+                    self.executables.setdefault(base_folder, {})
+                    if working_dir in self.executables[base_folder]:
+                        existing_data = self.executables[base_folder][working_dir]
+                        if cmd and cmd not in existing_data["exe_files"]:
+                            existing_data["exe_files"].append(cmd)
+                        existing_data["exe_files"] = ["Skip"] + [
+                            exe for exe in existing_data["exe_files"] if exe != "Skip"
+                        ]
+                        existing_data["selected_exe"] = cmd or existing_data.get("selected_exe", "Skip")
+                        existing_data["image-path"] = image_path or existing_data.get("image-path", "")
+                        existing_data["name"] = name
+                    else:
+                        self.executables[base_folder][working_dir] = {
+                            "exe_files": ["Skip", cmd] if cmd else ["Skip"],
+                            "selected_exe": cmd or "Skip",
+                            "image-path": image_path,
+                            "name": name
+                        }
                 else:
-                    QMessageBox.warning(self, "Invalid JSON", "The selected file does not contain an 'apps' key.")
-            except Exception as e:
-                logging.error(f"Failed to load JSON: {e}")
-                QMessageBox.critical(self, "Error", f"Failed to load JSON: {e}")
+                    self.executables.setdefault("Miscellaneous", {})
+                    if name not in self.executables["Miscellaneous"]:
+                        self.executables["Miscellaneous"][name] = {
+                            "exe_files": ["Skip", cmd] if cmd else ["Skip"],
+                            "selected_exe": cmd or "Skip",
+                            "image-path": image_path,
+                            "name": name
+                        }
+            QMessageBox.information(self, "Success", f"Loaded and merged {len(config['apps'])} apps.")
+            self.update_gui()
+        except Exception as e:
+            logging.error(f"Failed to load JSON: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to load JSON: {e}")
 
     def load_and_sort_json(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select JSON File", "", "JSON Files (*.json)")
@@ -439,52 +458,31 @@ class FolderScannerApp(QWidget):
         progress_dialog.show()
         QApplication.processEvents()
         for folder in self.base_folders:
-            if folder not in self.executables:
-                self.executables[folder] = {}
+            folder = os.path.normpath(folder)
+            self.executables.setdefault(folder, {})
             for subfolder in os.listdir(folder):
-                subfolder_path = os.path.join(folder, subfolder)
+                subfolder_path = os.path.normpath(os.path.join(folder, subfolder))
                 if os.path.isdir(subfolder_path):
                     exe_files = []
                     for root, _, files in os.walk(subfolder_path):
                         exe_files.extend(
-                            os.path.join(root, f) for f in files
+                            os.path.normpath(os.path.join(root, f)) for f in files
                             if f.endswith('.exe') and not any(kw in f.lower() for kw in self.FILTER_KEYWORDS)
                         )
+                    exe_files = list(set(exe_files))
                     if subfolder_path in self.executables[folder]:
                         existing_data = self.executables[folder][subfolder_path]
                         existing_data["exe_files"] = list(set(existing_data["exe_files"] + exe_files))
+                        existing_data["exe_files"] = ["Skip"] + [
+                            exe for exe in existing_data["exe_files"] if exe != "Skip"
+                        ]
                     else:
                         self.executables[folder][subfolder_path] = {
-                            "exe_files": exe_files,
+                            "exe_files": ["Skip"] + exe_files,
                             "selected_exe": "Skip",
-                            "image-path": ""
+                            "image-path": "",
+                            "name": os.path.basename(subfolder_path)
                         }
-        for app in self.loaded_apps:
-            working_dir = app.get("working-dir", "").strip("\"")
-            cmd = app.get("cmd", "").strip("\"")
-            image_path = app.get("image-path", "")
-            if working_dir:
-                base_folder = os.path.dirname(working_dir)
-                if base_folder not in self.executables:
-                    self.executables[base_folder] = {}
-                if working_dir in self.executables[base_folder]:
-                    existing_data = self.executables[base_folder][working_dir]
-                    if cmd and cmd not in existing_data["exe_files"]:
-                        existing_data["exe_files"].append(cmd)
-                    existing_data["selected_exe"] = cmd if cmd else existing_data.get("selected_exe", "Skip")
-                    existing_data["image-path"] = image_path or existing_data.get("image-path", "")
-                else:
-                    exe_files = []
-                    for root, _, files in os.walk(working_dir):
-                        exe_files.extend(
-                            os.path.join(root, f) for f in files
-                            if f.endswith('.exe') and not any(kw in f.lower() for kw in self.FILTER_KEYWORDS)
-                        )
-                    self.executables[base_folder][working_dir] = {
-                        "exe_files": exe_files,
-                        "selected_exe": cmd if cmd else "Skip",
-                        "image-path": image_path
-                    }
         progress_dialog.close()
         self.update_gui()
 
@@ -495,19 +493,25 @@ class FolderScannerApp(QWidget):
                 widget.deleteLater()
         self.scroll_layout.setAlignment(Qt.AlignTop)
         for base_folder, subfolders in self.executables.items():
-            base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))
-            base_label.setStyleSheet("font-weight: bold;")
+            if base_folder == "Special":
+                base_label = QLabel("Special Entries")
+                base_label.setStyleSheet("font-weight: bold; color: #FFD700;")
+            elif base_folder == "Miscellaneous":
+                base_label = QLabel("Miscellaneous Entries")
+                base_label.setStyleSheet("font-weight: bold; color: #FF4500;")
+            else:
+                base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))
+                base_label.setStyleSheet("font-weight: bold;")
             base_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.scroll_layout.addWidget(base_label)
-            for subfolder_path, data in subfolders.items():
-                subfolder_label = QLabel("Subfolder: " + os.path.basename(subfolder_path).replace("/", "\\") + " (" + data.get("name", "Unnamed") + ")")
+            for data in subfolders.items():
+                subfolder_label = QLabel(f"Entry: {data.get('name', 'Unnamed Entry')}")
                 subfolder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(subfolder_label)
                 combo_box = NoScrollComboBox()
-                combo_box.addItem("Skip")
                 combo_box.addItems(data["exe_files"])
                 combo_box.setCurrentText(data["selected_exe"])
-                combo_box.currentTextChanged.connect(lambda selected, data=data: self.update_selected_exe(data, selected))
+                combo_box.currentTextChanged.connect(partial(self.update_selected_exe, data))
                 combo_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(combo_box)
 
@@ -516,39 +520,46 @@ class FolderScannerApp(QWidget):
 
     def save_configuration(self):
         flat_apps = []
-        flat_apps.append({
-            "name": "Desktop",
-            "image-path": "desktop.png"
-        })
-        flat_apps.append({
-            "name": "Steam Big Picture",
-            "cmd": "steam://open/bigpicture",
-            "auto-detach": "true",
-            "wait-all": "true",
-            "image-path": "steam.png"
-        })
+        added_keys = set()
         for base_folder, subfolders in self.executables.items():
             for subfolder_path, data in subfolders.items():
                 if data["selected_exe"] == "Skip":
                     continue
-                flat_apps.append({
-                    "name": data.get("name", os.path.basename(subfolder_path)),
-                    "base_folder": base_folder.replace("/", "\\"),
-                    "cmd": "\"" + data['selected_exe'].replace("/", "\\") + "\"",
-                    "exclude-global-prep-cmd": "false",
-                    "elevated": "false",
-                    "auto-detach": "false",
-                    "wait-all": "true",
-                    "exit-timeout": "5",
-                    "image-path": data.get("image-path", ""),
-                    "working-dir": "\"" + subfolder_path.replace("/", "\\") + "\""
-                })
+
+                key = data.get("working-dir", subfolder_path) or data.get("name")
+                if key in added_keys:
+                    continue
+                if base_folder == "Special" and data["selected_exe"] == "Include":
+                    flat_apps.append({
+                        "name": data["name"],
+                        "cmd": None,
+                        "exclude-global-prep-cmd": "false",
+                        "elevated": "false",
+                        "auto-detach": "false",
+                        "wait-all": "true",
+                        "exit-timeout": "5",
+                        "image-path": data.get("image-path", ""),
+                        "working-dir": None
+                    })
+                    added_keys.add(data["name"])
+                else:
+                    flat_apps.append({
+                        "name": data.get("name", os.path.basename(subfolder_path)),
+                        "cmd": "\"" + data["selected_exe"].replace("/", "\\") + "\"",
+                        "exclude-global-prep-cmd": "false",
+                        "elevated": "false",
+                        "auto-detach": "false",
+                        "wait-all": "true",
+                        "exit-timeout": "5",
+                        "image-path": data.get("image-path", ""),
+                        "working-dir": "\"" + subfolder_path.replace("/", "\\") + "\""
+                    })
+                    added_keys.add(key)
         for app in self.loaded_apps:
-            working_dir = app.get("working-dir", "").strip("\"")
-            if working_dir and working_dir not in [
-                entry.get("working-dir", "").strip("\"") for entry in flat_apps if "working-dir" in entry
-            ]:
+            key = app.get("working-dir") or app.get("name")
+            if key not in added_keys:
                 flat_apps.append(app)
+                added_keys.add(key)
         sort_dialog = SortDialog(flat_apps, None, self)
         sort_dialog.exec_()
 
