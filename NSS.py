@@ -385,13 +385,13 @@ class FolderScannerApp(QWidget):
             with open(file_path, "r") as f:
                 config = json.load(f)
             logging.debug(f"Loaded JSON: {config}")
-
             if not isinstance(config, dict):
                 raise ValueError("Invalid JSON format: Root is not a dictionary.")
             if "apps" not in config:
                 raise ValueError("Invalid JSON format: Missing 'apps' key.")
             if not isinstance(config["apps"], list):
                 raise ValueError("Invalid JSON format: 'apps' is not a list.")
+
             self.executables.setdefault("Special", {})
             special_entries = {
                 "Desktop": {
@@ -422,20 +422,32 @@ class FolderScannerApp(QWidget):
                 cmd = os.path.normpath(app.get("cmd", "").strip("\"")) if app.get("cmd") else ""
                 image_path = app.get("image-path", "")
                 working_dir = os.path.normpath(app.get("working-dir", "").strip("\"")) if app.get("working-dir") else ""
+                exe_files = ["Skip"]
+                if working_dir and os.path.exists(working_dir):
+                    for root, _, files in os.walk(working_dir):
+                        exe_files.extend(
+                            os.path.normpath(os.path.join(root, file)) 
+                            for file in files 
+                            if file.endswith(".exe") and not any(keyword in file.lower() for keyword in self.FILTER_KEYWORDS)
+                        )
+                    exe_files = sorted(set(exe_files))
+                if cmd and cmd not in exe_files:
+                    exe_files.append(cmd)
+                exe_files = ["Skip"] + [item for item in exe_files if item != "Skip"]
                 if working_dir:
                     base_folder = os.path.dirname(working_dir)
                     self.executables.setdefault(base_folder, {})
                     self.executables[base_folder][working_dir] = {
-                        "exe_files": ["Skip", cmd] if cmd else ["Skip"],
-                        "selected_exe": cmd or "Skip",
+                        "exe_files": exe_files,
+                        "selected_exe": cmd if cmd in exe_files else "Skip",
                         "image-path": image_path,
                         "name": name
                     }
                 else:
                     self.executables.setdefault("Miscellaneous", {})
                     self.executables["Miscellaneous"][name] = {
-                        "exe_files": ["Skip", cmd] if cmd else ["Skip"],
-                        "selected_exe": cmd or "Skip",
+                        "exe_files": exe_files,
+                        "selected_exe": cmd if cmd in exe_files else "Skip",
                         "image-path": image_path,
                         "name": name
                     }
