@@ -367,6 +367,17 @@ class FolderScannerApp(QWidget):
         save_button = QPushButton("Sort Configuration")
         save_button.clicked.connect(self.save_configuration)
         self.layout.addWidget(save_button)
+        
+    def clean_up_special_entries(self):
+        special_names = {"Desktop", "Steam Big Picture"}
+
+        # Iterate through all categories except "Special" to remove special entries
+        for category, subfolders in list(self.executables.items()):
+            if category == "Special":
+                continue
+            for name in list(subfolders.keys()):
+                if name in special_names:
+                    del subfolders[name]
 
     def load_json(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select JSON File to Load", "", "JSON Files (*.json)")
@@ -377,54 +388,59 @@ class FolderScannerApp(QWidget):
                 config = json.load(f)
             if not isinstance(config, dict) or "apps" not in config or not isinstance(config["apps"], list):
                 raise ValueError("Invalid JSON format: 'apps' key must contain a list.")
+
+            # Ensure "Desktop" and "Steam Big Picture" are always in Special Entries
+            self.executables.setdefault("Special", {})
+            special_entries = {
+                "Desktop": {
+                    "name": "Desktop",
+                    "cmd": None,
+                    "image-path": "desktop.png",
+                    "selected_exe": "Include",
+                    "exe_files": ["Skip", "Include"]
+                },
+                "Steam Big Picture": {
+                    "name": "Steam Big Picture",
+                    "cmd": "steam://open/bigpicture",
+                    "image-path": "steam.png",
+                    "selected_exe": "Include",
+                    "exe_files": ["Skip", "Include"]
+                }
+            }
+
+            # Add "Desktop" and "Steam Big Picture" to Special Entries
+            for key, entry in special_entries.items():
+                self.executables["Special"][key] = entry
+
+            # Process other apps in the JSON
             for app in config["apps"]:
-                if not isinstance(app, dict):
-                    logging.warning(f"Skipping invalid app entry: {app}")
-                    continue
                 name = app.get("name", "Unnamed App")
+                if name in special_entries:  # Skip adding to other categories
+                    continue
                 cmd = os.path.normpath(app.get("cmd", "").strip("\"")) if app.get("cmd") else ""
                 image_path = app.get("image-path", "")
                 working_dir = os.path.normpath(app.get("working-dir", "").strip("\"")) if app.get("working-dir") else ""
-                if name in self.executables.get("Special", {}) or working_dir in [
-                    wd for base in self.executables.values() for wd in base
-                ]:
-                    continue
-                if name in ["Desktop", "Steam Big Picture"]:
-                    self.executables.setdefault("Special", {})[name] = {
-                        "exe_files": ["Skip", "Include"],  # Ensure "Skip" is the first entry
-                        "selected_exe": "Include" if cmd or name == "Desktop" else "Skip",
+
+                if working_dir:
+                    base_folder = os.path.dirname(working_dir)
+                    self.executables.setdefault(base_folder, {})
+                    self.executables[base_folder][working_dir] = {
+                        "exe_files": ["Skip", cmd] if cmd else ["Skip"],
+                        "selected_exe": cmd or "Skip",
                         "image-path": image_path,
                         "name": name
                     }
-                elif working_dir:
-                    base_folder = os.path.dirname(working_dir)
-                    self.executables.setdefault(base_folder, {})
-                    if working_dir in self.executables[base_folder]:
-                        existing_data = self.executables[base_folder][working_dir]
-                        if cmd and cmd not in existing_data["exe_files"]:
-                            existing_data["exe_files"].append(cmd)
-                        existing_data["exe_files"] = ["Skip"] + [
-                            exe for exe in existing_data["exe_files"] if exe != "Skip"
-                        ]
-                        existing_data["selected_exe"] = cmd or existing_data.get("selected_exe", "Skip")
-                        existing_data["image-path"] = image_path or existing_data.get("image-path", "")
-                        existing_data["name"] = name
-                    else:
-                        self.executables[base_folder][working_dir] = {
-                            "exe_files": ["Skip", cmd] if cmd else ["Skip"],
-                            "selected_exe": cmd or "Skip",
-                            "image-path": image_path,
-                            "name": name
-                        }
                 else:
                     self.executables.setdefault("Miscellaneous", {})
-                    if name not in self.executables["Miscellaneous"]:
-                        self.executables["Miscellaneous"][name] = {
-                            "exe_files": ["Skip", cmd] if cmd else ["Skip"],
-                            "selected_exe": cmd or "Skip",
-                            "image-path": image_path,
-                            "name": name
-                        }
+                    self.executables["Miscellaneous"][name] = {
+                        "exe_files": ["Skip", cmd] if cmd else ["Skip"],
+                        "selected_exe": cmd or "Skip",
+                        "image-path": image_path,
+                        "name": name
+                    }
+
+            # Remove "Desktop" and "Steam Big Picture" from other categories
+            self.clean_up_special_entries()
             QMessageBox.information(self, "Success", f"Loaded and merged {len(config['apps'])} apps.")
             self.update_gui()
         except Exception as e:
@@ -462,6 +478,29 @@ class FolderScannerApp(QWidget):
         progress_dialog.setWindowModality(Qt.ApplicationModal)
         progress_dialog.show()
         QApplication.processEvents()
+
+        # Ensure "Desktop" and "Steam Big Picture" are in Special Entries
+        self.executables.setdefault("Special", {})
+        special_entries = {
+            "Desktop": {
+                "name": "Desktop",
+                "cmd": None,
+                "image-path": "desktop.png",
+                "selected_exe": "Include",
+                "exe_files": ["Skip", "Include"]
+            },
+            "Steam Big Picture": {
+                "name": "Steam Big Picture",
+                "cmd": "steam://open/bigpicture",
+                "image-path": "steam.png",
+                "selected_exe": "Include",
+                "exe_files": ["Skip", "Include"]
+            }
+        }
+        for key, entry in special_entries.items():
+            self.executables["Special"][key] = entry
+
+        # Scan all added folders
         for folder in self.base_folders:
             folder = os.path.normpath(folder)
             self.executables.setdefault(folder, {})
@@ -475,42 +514,55 @@ class FolderScannerApp(QWidget):
                             if f.endswith('.exe') and not any(kw in f.lower() for kw in self.FILTER_KEYWORDS)
                         )
                     exe_files = list(set(exe_files))
-                    if subfolder_path in self.executables[folder]:
-                        existing_data = self.executables[folder][subfolder_path]
-                        existing_data["exe_files"] = list(set(existing_data["exe_files"] + exe_files))
-                        existing_data["exe_files"] = ["Skip"] + [
-                            exe for exe in existing_data["exe_files"] if exe != "Skip"
-                        ]
-                    else:
-                        self.executables[folder][subfolder_path] = {
-                            "exe_files": ["Skip"] + exe_files,
-                            "selected_exe": "Skip",
-                            "image-path": "",
-                            "name": os.path.basename(subfolder_path)
-                        }
+                    self.executables[folder][subfolder_path] = {
+                        "exe_files": ["Skip"] + exe_files,
+                        "selected_exe": "Skip",
+                        "image-path": "",
+                        "name": os.path.basename(subfolder_path)
+                    }
+
+        # Remove "Desktop" and "Steam Big Picture" from other categories
+        self.clean_up_special_entries()
         progress_dialog.close()
         self.update_gui()
 
     def update_gui(self):
+        # Clear existing layout widgets
         for i in reversed(range(self.scroll_layout.count())):
             widget = self.scroll_layout.takeAt(i).widget()
             if widget:
                 widget.deleteLater()
+
         self.scroll_layout.setAlignment(Qt.AlignTop)
-        for base_folder, subfolders in self.executables.items():
-            if base_folder == "Special":
-                base_label = QLabel("Special Entries")
-                base_label.setStyleSheet("font-weight: bold; color: #FFD700;")
-            elif base_folder == "Miscellaneous":
-                base_label = QLabel("Miscellaneous Entries")
-                base_label.setStyleSheet("font-weight: bold; color: #FF4500;")
-            else:
-                base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))
-                base_label.setStyleSheet("font-weight: bold;")
+
+        # Ensure "Desktop" and "Steam Big Picture" appear at the top
+        special_entries = self.executables.get("Special", {})
+        if special_entries:
+            base_label = QLabel("Special Entries")
+            base_label.setStyleSheet("font-weight: bold; color: #FFD700;")
             base_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.scroll_layout.addWidget(base_label)
-            for data in subfolders.items():
-                subfolder_label = QLabel(f"Entry: {data.get('name', 'Unnamed Entry')}")
+            for name, data in special_entries.items():
+                subfolder_label = QLabel(f"Entry: {data['name']}")
+                subfolder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                self.scroll_layout.addWidget(subfolder_label)
+                combo_box = NoScrollComboBox()
+                combo_box.addItems(data["exe_files"])
+                combo_box.setCurrentText(data["selected_exe"])
+                combo_box.currentTextChanged.connect(partial(self.update_selected_exe, data))
+                combo_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                self.scroll_layout.addWidget(combo_box)
+
+        # Display other folders and entries
+        for base_folder, subfolders in self.executables.items():
+            if base_folder == "Special":
+                continue  # Skip "Special" because it's already displayed
+            base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))
+            base_label.setStyleSheet("font-weight: bold;")
+            base_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.scroll_layout.addWidget(base_label)
+            for subfolder_path, data in subfolders.items():
+                subfolder_label = QLabel(f"Entry: {data['name']}")
                 subfolder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(subfolder_label)
                 combo_box = NoScrollComboBox()
