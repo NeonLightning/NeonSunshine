@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-__version__ = "1.0.9"
+__version__ = "1.0.10"
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -370,8 +370,6 @@ class FolderScannerApp(QWidget):
         
     def clean_up_special_entries(self):
         special_names = {"Desktop", "Steam Big Picture"}
-
-        # Iterate through all categories except "Special" to remove special entries
         for category, subfolders in list(self.executables.items()):
             if category == "Special":
                 continue
@@ -388,8 +386,6 @@ class FolderScannerApp(QWidget):
                 config = json.load(f)
             if not isinstance(config, dict) or "apps" not in config or not isinstance(config["apps"], list):
                 raise ValueError("Invalid JSON format: 'apps' key must contain a list.")
-
-            # Ensure "Desktop" and "Steam Big Picture" are always in Special Entries
             self.executables.setdefault("Special", {})
             special_entries = {
                 "Desktop": {
@@ -407,20 +403,15 @@ class FolderScannerApp(QWidget):
                     "exe_files": ["Skip", "Include"]
                 }
             }
-
-            # Add "Desktop" and "Steam Big Picture" to Special Entries
             for key, entry in special_entries.items():
                 self.executables["Special"][key] = entry
-
-            # Process other apps in the JSON
             for app in config["apps"]:
                 name = app.get("name", "Unnamed App")
-                if name in special_entries:  # Skip adding to other categories
+                if name in special_entries:
                     continue
                 cmd = os.path.normpath(app.get("cmd", "").strip("\"")) if app.get("cmd") else ""
                 image_path = app.get("image-path", "")
                 working_dir = os.path.normpath(app.get("working-dir", "").strip("\"")) if app.get("working-dir") else ""
-
                 if working_dir:
                     base_folder = os.path.dirname(working_dir)
                     self.executables.setdefault(base_folder, {})
@@ -438,8 +429,6 @@ class FolderScannerApp(QWidget):
                         "image-path": image_path,
                         "name": name
                     }
-
-            # Remove "Desktop" and "Steam Big Picture" from other categories
             self.clean_up_special_entries()
             QMessageBox.information(self, "Success", f"Loaded and merged {len(config['apps'])} apps.")
             self.update_gui()
@@ -478,8 +467,6 @@ class FolderScannerApp(QWidget):
         progress_dialog.setWindowModality(Qt.ApplicationModal)
         progress_dialog.show()
         QApplication.processEvents()
-
-        # Ensure "Desktop" and "Steam Big Picture" are in Special Entries
         self.executables.setdefault("Special", {})
         special_entries = {
             "Desktop": {
@@ -499,8 +486,6 @@ class FolderScannerApp(QWidget):
         }
         for key, entry in special_entries.items():
             self.executables["Special"][key] = entry
-
-        # Scan all added folders
         for folder in self.base_folders:
             folder = os.path.normpath(folder)
             self.executables.setdefault(folder, {})
@@ -520,22 +505,17 @@ class FolderScannerApp(QWidget):
                         "image-path": "",
                         "name": os.path.basename(subfolder_path)
                     }
-
-        # Remove "Desktop" and "Steam Big Picture" from other categories
         self.clean_up_special_entries()
         progress_dialog.close()
         self.update_gui()
 
     def update_gui(self):
-        # Clear existing layout widgets
         for i in reversed(range(self.scroll_layout.count())):
             widget = self.scroll_layout.takeAt(i).widget()
             if widget:
                 widget.deleteLater()
 
         self.scroll_layout.setAlignment(Qt.AlignTop)
-
-        # Ensure "Desktop" and "Steam Big Picture" appear at the top
         special_entries = self.executables.get("Special", {})
         if special_entries:
             base_label = QLabel("Special Entries")
@@ -552,16 +532,14 @@ class FolderScannerApp(QWidget):
                 combo_box.currentTextChanged.connect(partial(self.update_selected_exe, data))
                 combo_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(combo_box)
-
-        # Display other folders and entries
         for base_folder, subfolders in self.executables.items():
             if base_folder == "Special":
-                continue  # Skip "Special" because it's already displayed
+                continue
             base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))
             base_label.setStyleSheet("font-weight: bold;")
             base_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.scroll_layout.addWidget(base_label)
-            for subfolder_path, data in subfolders.items():
+            for data in subfolders.items():
                 subfolder_label = QLabel(f"Entry: {data['name']}")
                 subfolder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(subfolder_label)
@@ -582,7 +560,6 @@ class FolderScannerApp(QWidget):
             for subfolder_path, data in subfolders.items():
                 if data["selected_exe"] == "Skip":
                     continue
-
                 key = data.get("working-dir", subfolder_path) or data.get("name")
                 if key in added_keys:
                     continue
