@@ -14,6 +14,12 @@ Just makes a `.json` with your selected EXE files sorted how you want.
 ### Set Cover Downloding and API
 ![Sort JSON Entries](screenshots/screenshot3.png)
 
-### Deps if running from py
+## Installation
+### Windows
+Download the latest release `.exe` and run it.
 
-`imageio and pyQT`
+### Python script
+```bash
+$ pip install -r requirements.txt
+$ python3 ./NSS.py # If python3 is not found, locate the name of the binary yourself. 
+```
