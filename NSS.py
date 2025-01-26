@@ -200,7 +200,7 @@ class SortDialog(QDialog):
         edit_button.clicked.connect(toggle_cmd_edit)
         return widget
 
-    def refresh_drag_handles(self):
+    def refresh_drag_handles(self, source_parent, source_start, source_end, destination_parent, destination_row):
         for i in range(self.list_widget.count()):
             list_item = self.list_widget.item(i)
             item_widget = self.list_widget.itemWidget(list_item)
