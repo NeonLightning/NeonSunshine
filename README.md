@@ -8,7 +8,7 @@
 - **JSON Management**: Load, sort, and save JSON configuration files containing application data.
 - **Customization**: Edit application names and commands.
 - **Drag-and-Drop Sorting**: Reorder applications using a simple drag-and-drop interface.
-- **SteamGridDB Integration**: Fetch and save cover images for applications (requires API key).
+- **SteamGridDB Integration**: Fetch and save cover images for applications (requires API key).(Covers are saved in a folder named covers along side the saved json.)
 - **Configuration Management**: Save and load application settings via a configuration dialog.
 
 ## Screenshots
