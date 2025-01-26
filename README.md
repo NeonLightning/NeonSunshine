@@ -101,5 +101,5 @@ Errors and logs are saved in the `NSS_errors.log` file in the application direct
 
 ---
 
-Enjoy managing your applications effortlessly with `NeonSunshine`!
+Enjoy managing your applications effortlessly with `NeonSunshine`! What started as a 10minute project to individually add games. turned into a long slog to make a full fledged program.
 
