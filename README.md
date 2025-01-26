@@ -10,6 +10,7 @@ Just makes a `.json` with your selected EXE files sorted how you want.
 
 ### Sort JSON Entries
 Name editing can be done by clicking on the name aswell.
+
 ![Sort JSON Entries](screenshots/screenshot2.png)
 
 ### Set Cover Downloding and API
