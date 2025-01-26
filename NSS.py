@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from functools import partial
-import os, json, signal, requests, logging, re
+import os, json, signal, requests, logging, re, shutil
 
 logging.basicConfig(
     filename="NSS_errors.log",
@@ -32,7 +32,7 @@ class ConfigDialog(QDialog):
         self.layout().addWidget(save_button)
         self.config_file = "NSS-config.json"
         self.load_config()
-
+        
     def load_config(self):
         if os.path.exists(self.config_file):
             try:
@@ -398,10 +398,30 @@ class FolderScannerApp(QWidget):
         save_button = QPushButton("Sort Configuration")
         save_button.clicked.connect(self.save_configuration)
         self.layout.addWidget(save_button)
+        self.clear_covers_foldertoggle = False
+        self.loaded_json_path = None
+        self.covers_folder = None
+
+    def clear_covers_folder(self):
+        covers_dir = os.path.dirname(self.loaded_json_path)
+        self.covers_folder = os.path.join(covers_dir, "covers")
+        if os.path.exists(self.covers_folder):
+            try:
+                shutil.rmtree(self.covers_folder)
+                logging.info("Covers folder cleared successfully.")
+                QMessageBox.information(self, "Success", "Covers folder cleared!")
+                self.covers_folder = None
+                self.update_gui()
+            except Exception as e:
+                logging.error(f"Failed to clear covers folder: {e}")
+                QMessageBox.critical(self, "Error", f"Failed to clear covers folder: {e}")
+        else:
+            QMessageBox.information(self, "Information", "Covers folder does not exist.")
 
     def clear_list(self):
         self.executables.clear()
         self.base_folders.clear()
+        self.covers_folder = None
         self.update_gui()
         QMessageBox.information(self, "List Cleared", "The list has been successfully cleared.")
 
@@ -504,6 +524,8 @@ class FolderScannerApp(QWidget):
             self.clean_up_special_entries()
             progress_dialog.close()
             QMessageBox.information(self, "Success", f"Loaded and merged {len(config['apps'])} apps.")
+            self.loaded_json_path = file_path
+            self.clear_covers_foldertoggle = True
             self.update_gui()
         except Exception as e:
             logging.error(f"Failed to load JSON: {e}")
@@ -632,6 +654,16 @@ class FolderScannerApp(QWidget):
                 combo_box.currentTextChanged.connect(partial(self.update_selected_exe, data))
                 combo_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(combo_box)
+        if self.clear_covers_foldertoggle:
+            # Check if the button already exists
+            if not hasattr(self, 'clearcovers_button') or self.clearcovers_button is None:
+                self.clearcovers_button = QPushButton("Clear Covers Folder")
+                self.clearcovers_button.clicked.connect(self.clear_covers_folder)
+                self.layout.addWidget(self.clearcovers_button)
+            else:
+                self.layout.removeWidget(self.clearcovers_button)
+                self.clearcovers_button.deleteLater()
+                self.clearcovers_button = None
 
     def update_selected_exe(self, subfolder_data, selected_exe):
         subfolder_data["selected_exe"] = selected_exe
