@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-__version__ = "1.0.12"
+__version__ = "1.0.14"
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -100,7 +100,7 @@ class SortDialog(QDialog):
         config_dialog = ConfigDialog(self)
         if config_dialog.exec_():
             self.config = config_dialog.get_config()
-            self.download_covers = self.config.get("download_covers", True)
+            self.download_covers = self.config.get("download_covers", False)
 
     def create_app_widget(self, app, index):
         widget = QWidget()
