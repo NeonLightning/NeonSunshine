@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from functools import partial
-import os, json, signal, requests, logging
+import os, json, signal, requests, logging, re
 
 logging.basicConfig(
     filename="NSS_errors.log",
@@ -274,11 +274,12 @@ class SortDialog(QDialog):
 
     def fetch_game_image(self, game_name):
         api_key = self.config.get("api_key")
+        sanitized_name = re.sub(r'[^a-zA-Z0-9 ]', '', game_name)
         if not api_key:
             logging.error("SteamGridDB API Key is not configured.")
             QMessageBox.warning(self, "Configuration Error", "SteamGridDB API Key is missing. Please configure the settings.")
             return None
-        url = f"https://www.steamgriddb.com/api/v2/search/autocomplete/{game_name}"
+        url = f"https://www.steamgriddb.com/api/v2/search/autocomplete/{sanitized_name}"
         headers = {"Authorization": f"Bearer {api_key}"}
         try:
             response = requests.get(url, headers=headers)
@@ -287,7 +288,7 @@ class SortDialog(QDialog):
             logging.debug(f"SteamGridDB response for {game_name}: {results}")
             if results:
                 game_id = results[0]["id"]
-                return self.download_cover(game_id, game_name, api_key)
+                return self.download_cover(game_id, sanitized_name, api_key)
         except Exception as e:
             logging.error(f"Failed to fetch game data for {game_name}: {e}")
             QMessageBox.warning(self, "Error", f"Failed to fetch game data for {game_name}: {e}")
