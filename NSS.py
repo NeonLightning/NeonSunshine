@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-__version__ = "1.0.11"
+__version__ = "1.0.12"
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -139,7 +139,6 @@ class SortDialog(QDialog):
             "name_edit": name_edit,
             "cmd_edit": cmd_edit
         }
-
         def toggle_name_edit():
             if name_edit.isVisible():
                 updated_name = name_edit.text().strip()
@@ -148,8 +147,9 @@ class SortDialog(QDialog):
                     name_label.setText(updated_name)
                     name_label.setVisible(True)
                     name_edit.setVisible(False)
-                    self.cmd_edits[updated_name] = self.cmd_edits.pop(old_name)
-                    self.cmd_edits[updated_name]["name_edit"] = name_edit
+                    if old_name in self.cmd_edits:
+                        self.cmd_edits[updated_name] = self.cmd_edits.pop(old_name)
+                        self.cmd_edits[updated_name]["name_edit"] = name_edit
                     for app_item in self.apps:
                         if app_item.get("name") == old_name:
                             app_item["name"] = updated_name
@@ -159,33 +159,43 @@ class SortDialog(QDialog):
                 name_label.setVisible(False)
                 name_edit.setVisible(True)
                 name_edit.setFocus()
+                
+        def save_name():
+            updated_name = name_edit.text().strip()
+            if updated_name:
+                old_name = name_label.text()
+                name_label.setText(updated_name)
+                name_label.setVisible(True)
+                name_edit.setVisible(False)
+                if old_name in self.cmd_edits:
+                    self.cmd_edits[updated_name] = self.cmd_edits.pop(old_name)
+                    self.cmd_edits[updated_name]["name_edit"] = name_edit
+                for app_item in self.apps:
+                    if app_item.get("name") == old_name:
+                        app_item["name"] = updated_name
+                        break
+
+        name_edit.editingFinished.connect(save_name)
 
         def toggle_cmd_edit():
-            if cmd_edit.isVisible():
-                updated_cmd = cmd_edit.text().strip()
-                if updated_cmd:
-                    app["cmd"] = updated_cmd
-                cmd_edit.setVisible(False)
-                edit_button.setText("Edit Command")
-            else:
-                cmd_edit.setText(app.get("cmd", ""))
-                cmd_edit.setVisible(True)
-                cmd_edit.setFocus()
-                edit_button.setText("Done")
-                
-        def handle_enter_key(event):
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                if cmd_edit.isVisible():
-                    toggle_cmd_edit()
-                    return
-            event.ignore()
+            cmd_edit.setText(app.get("cmd", ""))
+            cmd_edit.setVisible(True)
+            cmd_edit.setFocusPolicy(Qt.StrongFocus)
+            cmd_edit.setFocus()
 
+        def save_command():
+            updated_cmd = cmd_edit.text().strip()
+            if updated_cmd:
+                app["cmd"] = updated_cmd
+                for app_item in self.apps:
+                    if app_item.get("name") == app.get("name"):
+                        app_item["cmd"] = updated_cmd
+                        break
+            cmd_edit.setVisible(False)
+
+        cmd_edit.editingFinished.connect(save_command)
         name_label.mousePressEvent = lambda event: toggle_name_edit()
-        name_edit.returnPressed.connect(toggle_name_edit)
-        name_edit.editingFinished.connect(lambda: None)
         edit_button.clicked.connect(toggle_cmd_edit)
-        cmd_edit.keyPressEvent = handle_enter_key
-        cmd_edit.editingFinished.connect(lambda: None)
         return widget
 
     def open_config_dialog(self):
@@ -364,10 +374,19 @@ class FolderScannerApp(QWidget):
         self.scroll_content.setLayout(self.scroll_layout)
         self.scroll_area.setWidget(self.scroll_content)
         self.layout.addWidget(self.scroll_area)
+        clear_list_button = QPushButton("Clear List")
+        clear_list_button.clicked.connect(self.clear_list)
+        self.layout.addWidget(clear_list_button)
         save_button = QPushButton("Sort Configuration")
         save_button.clicked.connect(self.save_configuration)
         self.layout.addWidget(save_button)
-        
+
+    def clear_list(self):
+        self.executables.clear()
+        self.base_folders.clear()
+        self.update_gui()
+        QMessageBox.information(self, "List Cleared", "The list has been successfully cleared.")
+
     def clean_up_special_entries(self):
         special_names = {"Desktop", "Steam Big Picture"}
         for category, subfolders in list(self.executables.items()):
@@ -391,10 +410,15 @@ class FolderScannerApp(QWidget):
                 raise ValueError("Invalid JSON format: Missing 'apps' key.")
             if not isinstance(config["apps"], list):
                 raise ValueError("Invalid JSON format: 'apps' is not a list.")
-
+            total_apps = len(config["apps"])
+            progress_dialog = QProgressDialog("Processing apps, please wait...", None, 0, total_apps, self)
+            progress_dialog.setWindowTitle("Loading JSON")
+            progress_dialog.setCancelButtonText("Cancel")
+            progress_dialog.setWindowModality(Qt.ApplicationModal)
+            progress_dialog.show()
+            QApplication.processEvents()
             self.executables.setdefault("Special", {})
             loaded_app_names = {app.get("name", "") for app in config["apps"] if isinstance(app, dict)}
-
             special_entries = {
                 "Desktop": {
                     "name": "Desktop",
@@ -453,7 +477,14 @@ class FolderScannerApp(QWidget):
                         "image-path": image_path,
                         "name": name
                     }
+                progress_dialog.setValue(index + 1)
+                QApplication.processEvents()
+                if progress_dialog.wasCanceled():
+                    progress_dialog.close()
+                    QMessageBox.warning(self, "Canceled", "JSON loading was canceled.")
+                    return
             self.clean_up_special_entries()
+            progress_dialog.close()
             QMessageBox.information(self, "Success", f"Loaded and merged {len(config['apps'])} apps.")
             self.update_gui()
         except Exception as e:
@@ -485,9 +516,13 @@ class FolderScannerApp(QWidget):
             self.scan_folders()
 
     def scan_folders(self):
-        progress_dialog = QProgressDialog("Scanning folders, please wait...", None, 0, 0, self)
+        total_subfolders = sum(
+            len([subfolder for subfolder in os.listdir(folder) if os.path.isdir(os.path.join(folder, subfolder))])
+            for folder in self.base_folders
+        )
+        progress_dialog = QProgressDialog("Scanning folders, please wait...", None, 0, total_subfolders, self)
         progress_dialog.setWindowTitle("Please Wait")
-        progress_dialog.setCancelButton(None)
+        progress_dialog.setCancelButtonText("Cancel")
         progress_dialog.setWindowModality(Qt.ApplicationModal)
         progress_dialog.show()
         QApplication.processEvents()
@@ -510,6 +545,7 @@ class FolderScannerApp(QWidget):
         ]
         for entry in special_entries:
             self.executables["Special"][entry["name"]] = entry
+        processed_subfolders = 0
         for folder in self.base_folders:
             folder = os.path.normpath(folder)
             self.executables.setdefault(folder, {})
@@ -529,6 +565,12 @@ class FolderScannerApp(QWidget):
                         "image-path": "",
                         "name": os.path.basename(subfolder_path)
                     }
+                    processed_subfolders += 1
+                    progress_dialog.setValue(processed_subfolders)
+                    QApplication.processEvents()
+                    if progress_dialog.wasCanceled():
+                        progress_dialog.close()
+                        return
         self.clean_up_special_entries()
         progress_dialog.close()
         self.update_gui()
