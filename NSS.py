@@ -295,6 +295,7 @@ class SortDialog(QDialog):
         return None
 
     def download_cover(self, game_id, game_name, api_key):
+        acceptable_sizes = [(600, 900), (342, 482)]
         url = f"https://www.steamgriddb.com/api/v2/grids/game/{game_id}"
         headers = {"Authorization": f"Bearer {api_key}"}
         try:
@@ -303,7 +304,14 @@ class SortDialog(QDialog):
             grids = response.json().get("data", [])
             logging.debug(f"Grid data for {game_name}: {grids}")
             if grids:
-                image_url = grids[0]["url"]
+                valid_grids = [
+                    grid for grid in grids
+                    if (grid.get("width"), grid.get("height")) in acceptable_sizes
+                ]
+                if not valid_grids:
+                    logging.warning(f"No valid cover art sizes found for {game_name}.")
+                    return None
+                image_url = valid_grids[0]["url"]
                 response = requests.get(image_url, stream=True)
                 response.raise_for_status()
                 image_dir = os.path.join(os.path.dirname(self.json_file_path), "covers")
@@ -317,6 +325,7 @@ class SortDialog(QDialog):
             logging.error(f"Failed to download or save cover for {game_name}: {e}")
             QMessageBox.warning(self, "Error", f"Failed to download or save cover for {game_name}: {e}")
         return None
+
 
 class NoScrollComboBox(QComboBox):
     def wheelEvent(self, event):
