@@ -13,8 +13,8 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-__version__ = "1.0.14"
-
+__version__ = "1.0.16"
+FILTER_KEYWORDS = ['uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler', 'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643', 'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864', 'vc_redist.x644', 'oalinst', 'vc_redistx86', 'vc_redistx64', 'vc_redistx64']
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -237,7 +237,7 @@ class SortDialog(QDialog):
                 name_edit = app_fields["name_edit"]
                 cmd_edit = app_fields["cmd_edit"]
                 updated_name = name_edit.text().strip()
-                updated_cmd = cmd_edit.text().strip().replace("\\", "/")
+                updated_cmd = cmd_edit.text().strip()
                 for app in self.apps:
                     if app.get("name") == name_label.text():
                         app["name"] = updated_name
@@ -258,7 +258,7 @@ class SortDialog(QDialog):
                                     logging.debug(f"Fetching new cover for: {updated_name}")
                                     image_path = self.fetch_game_image(updated_name)
                                     if image_path:
-                                        app["image-path"] = image_path
+                                        app["image-path"] = image_path.replace("/", "\\")
                                         logging.debug(f"Updated image-path for {updated_name}: {image_path}")
                                     else:
                                         logging.warning(f"No image found for {updated_name}")
@@ -267,11 +267,12 @@ class SortDialog(QDialog):
                                     logging.debug(f"Cleared image-path for {updated_name} as downloading is disabled.")
                             else:
                                 logging.debug(f"Image-path for {updated_name} is up-to-date: {current_image_path}")
-
                         reordered_apps.append(app)
                         break
             with open(self.json_file_path, "w") as f:
                 json.dump({"env": "", "apps": reordered_apps}, f, indent=4)
+            progress_dialog.setValue(progress_dialog.maximum())
+            progress_dialog.close()
             QMessageBox.information(self, "Success", f"Configuration saved to {self.json_file_path}")
             self.accept()
         except Exception as e:
@@ -343,7 +344,6 @@ class FolderScannerApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowIcon(QIcon('icon.ico'))
-        self.FILTER_KEYWORDS = ['uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler', 'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643', 'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864', 'vc_redist.x644', 'oalinst', 'vc_redistx86', 'vc_redistx64', 'vc_redistx64']
         self.setWindowTitle("NeonSunshine")
         self.setStyleSheet("""
             QWidget {
@@ -382,6 +382,9 @@ class FolderScannerApp(QWidget):
         select_button = QPushButton("Add Folder")
         select_button.clicked.connect(self.select_folders)
         self.layout.addWidget(select_button)
+        add_manual_entry_button = QPushButton("Add Manual Entry")
+        add_manual_entry_button.clicked.connect(self.add_manual_entry)
+        self.layout.addWidget(add_manual_entry_button)
         load_sort_button = QPushButton("Load and Sort JSON")
         load_sort_button.clicked.connect(self.load_and_sort_json)
         self.layout.addWidget(load_sort_button)
@@ -494,7 +497,7 @@ class FolderScannerApp(QWidget):
                 if name in special_entries:
                     continue
                 cmd = os.path.normpath(app.get("cmd", "").strip("\"")) if app.get("cmd") else ""
-                image_path = app.get("image-path", "")
+                image_path = os.path.normpath(app.get("image-path", "").strip("\"")) if app.get("image-path") else ""
                 working_dir = os.path.normpath(app.get("working-dir", "").strip("\"")) if app.get("working-dir") else ""
                 exe_files = ["Skip"]
                 if working_dir and os.path.exists(working_dir):
@@ -502,7 +505,7 @@ class FolderScannerApp(QWidget):
                         exe_files.extend(
                             os.path.normpath(os.path.join(root, file)) 
                             for file in files 
-                            if file.endswith(".exe") and not any(keyword in file.lower() for keyword in self.FILTER_KEYWORDS)
+                            if file.endswith(".exe") and not any(keyword in file.lower() for keyword in FILTER_KEYWORDS)
                         )
                     exe_files = sorted(set(exe_files))
                 if cmd and cmd not in exe_files:
@@ -606,7 +609,7 @@ class FolderScannerApp(QWidget):
                     for root, _, files in os.walk(subfolder_path):
                         exe_files.extend(
                             os.path.normpath(os.path.join(root, f)) for f in files
-                            if f.endswith('.exe') and not any(kw in f.lower() for kw in self.FILTER_KEYWORDS)
+                            if f.endswith('.exe') and not any(kw in f.lower() for kw in FILTER_KEYWORDS)
                         )
                     exe_files = list(set(exe_files))
                     self.executables[folder][subfolder_path] = {
@@ -647,8 +650,24 @@ class FolderScannerApp(QWidget):
                 combo_box.currentTextChanged.connect(partial(self.update_selected_exe, data))
                 combo_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(combo_box)
+        manual_entries = self.executables.get("Manual Entries", {})
+        if manual_entries:
+            base_label = QLabel("Manual Entries")
+            base_label.setStyleSheet("font-weight: bold; color: #32CD32;")
+            base_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            self.scroll_layout.addWidget(base_label)
+            for name, data in manual_entries.items():
+                subfolder_label = QLabel(f"Entry: {data['name']}")
+                subfolder_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                self.scroll_layout.addWidget(subfolder_label)
+                combo_box = NoScrollComboBox()
+                combo_box.addItems(data["exe_files"])
+                combo_box.setCurrentText(data["selected_exe"])
+                combo_box.currentTextChanged.connect(partial(self.update_selected_exe, data))
+                combo_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                self.scroll_layout.addWidget(combo_box)
         for base_folder, subfolders in self.executables.items():
-            if base_folder == "Special":
+            if base_folder in {"Special", "Manual Entries"}:
                 continue
             base_label = QLabel("Base Folder: " + base_folder.replace("/", "\\"))
             base_label.setStyleSheet("font-weight: bold;")
@@ -665,7 +684,6 @@ class FolderScannerApp(QWidget):
                 combo_box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 self.scroll_layout.addWidget(combo_box)
         if self.clear_covers_foldertoggle:
-            # Check if the button already exists
             if not hasattr(self, 'clearcovers_button') or self.clearcovers_button is None:
                 self.clearcovers_button = QPushButton("Clear Covers Folder")
                 self.clearcovers_button.clicked.connect(self.clear_covers_folder)
@@ -678,6 +696,23 @@ class FolderScannerApp(QWidget):
     def update_selected_exe(self, subfolder_data, selected_exe):
         subfolder_data["selected_exe"] = selected_exe
 
+    def add_manual_entry(self):
+        dialog = AddManualEntryDialog(self)
+        if dialog.exec_():
+            manual_entry = dialog.get_manual_entry()
+            if manual_entry:
+                self.executables.setdefault("Manual Entries", {})
+                self.executables["Manual Entries"][manual_entry["name"]] = {
+                    "name": manual_entry["name"],
+                    "cmd": manual_entry["cmd"],
+                    "working-dir": manual_entry["working-dir"],
+                    "image-path": manual_entry["image-path"],
+                    "exe_files": ["Skip", manual_entry["cmd"]],
+                    "selected_exe": manual_entry["cmd"]
+                }
+                self.update_gui()
+                QMessageBox.information(self, "Success", f"Manual entry '{manual_entry['name']}' added successfully!")
+
     def save_configuration(self):
         flat_apps = []
         added_keys = set()
@@ -685,7 +720,7 @@ class FolderScannerApp(QWidget):
             for subfolder_path, data in subfolders.items():
                 if data["selected_exe"] == "Skip":
                     continue
-                key = data.get("working-dir", subfolder_path) or data.get("name")
+                key = data.get("name", subfolder_path)
                 if key in added_keys:
                     continue
                 if base_folder == "Special" and data["selected_exe"] == "Include":
@@ -710,17 +745,101 @@ class FolderScannerApp(QWidget):
                         "auto-detach": "false",
                         "wait-all": "true",
                         "exit-timeout": "5",
-                        "image-path": data.get("image-path", ""),
-                        "working-dir": "\"" + subfolder_path.replace("/", "\\") + "\""
+                        "image-path": "\"" + data.get("image-path", subfolder_path).replace("/", "\\") + "\"",
+                        "working-dir": "\"" + data.get("working-dir", subfolder_path).replace("/", "\\") + "\""
                     })
                     added_keys.add(key)
         for app in self.loaded_apps:
-            key = app.get("working-dir") or app.get("name")
+            key = app.get("name")
             if key not in added_keys:
                 flat_apps.append(app)
                 added_keys.add(key)
         sort_dialog = SortDialog(flat_apps, None, self)
         sort_dialog.exec_()
+    
+class AddManualEntryDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add Manual Entry")
+        self.setLayout(QVBoxLayout())
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Enter application name")
+        self.layout().addWidget(QLabel("Application Name:"))
+        self.layout().addWidget(self.name_edit)
+        cmd_layout = QHBoxLayout()
+        self.cmd_edit = QLineEdit()
+        self.cmd_edit.setPlaceholderText("Enter command (e.g., path to .exe)")
+        cmd_layout.addWidget(self.cmd_edit)
+        self.browse_button = QPushButton("Browse")
+        self.browse_button.clicked.connect(self.browse_exe)
+        cmd_layout.addWidget(self.browse_button)
+        self.layout().addWidget(QLabel("Command:"))
+        self.layout().addLayout(cmd_layout)
+        working_dir_layout = QHBoxLayout()
+        self.working_dir_edit = QLineEdit()
+        self.working_dir_edit.setPlaceholderText("Enter working directory (optional)")
+        working_dir_layout.addWidget(self.working_dir_edit)
+        self.browse_working_dir_button = QPushButton("Browse")
+        self.browse_working_dir_button.clicked.connect(self.browse_working_dir)
+        working_dir_layout.addWidget(self.browse_working_dir_button)
+        self.layout().addWidget(QLabel("Working Directory:"))
+        self.layout().addLayout(working_dir_layout)
+        self.image_path_edit = QLineEdit()
+        self.image_path_edit.setPlaceholderText("Enter image path (optional)")
+        self.layout().addWidget(QLabel("Image Path:"))
+        self.layout().addWidget(self.image_path_edit)
+        self.image_path_button = QPushButton("Browse Image")
+        self.image_path_button.clicked.connect(self.browse_image)
+        self.layout().addWidget(self.image_path_button)
+        buttons_layout = QHBoxLayout()
+        add_button = QPushButton("Add")
+        add_button.clicked.connect(self.add_entry)
+        buttons_layout.addWidget(add_button)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        buttons_layout.addWidget(cancel_button)
+        self.layout().addLayout(buttons_layout)
+        self.manual_entry = None
+
+    def browse_exe(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Executable File", "", "Executable Files (*.exe)")
+        if file_path:
+            self.cmd_edit.setText(file_path)
+            self.working_dir_edit.setText(os.path.dirname(file_path))
+
+    def browse_working_dir(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "Select Working Directory")
+        if dir_path:
+            self.working_dir_edit.setText(dir_path)
+
+    def browse_image(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Image File", "", "Image Files (*.png *.jpg *.jpeg)")
+        if file_path:
+            self.image_path_edit.setText(file_path)
+
+    def add_entry(self):
+        name = self.name_edit.text().strip()
+        cmd = self.cmd_edit.text().strip()
+        image_path = self.image_path_edit.text().strip()
+        working_dir = self.working_dir_edit.text().strip()
+        if not name or not cmd:
+            QMessageBox.warning(self, "Invalid Input", "Name and Command are required fields.")
+            return
+        if not os.path.isabs(cmd):
+            QMessageBox.warning(self, "Invalid Command", "Please provide an absolute path for the command.")
+            return
+        if not working_dir:
+            working_dir = os.path.dirname(cmd)
+        self.manual_entry = {
+            "name": name,
+            "cmd": cmd,
+            "working-dir": working_dir if working_dir else os.path.dirname(cmd),
+            "image-path": image_path if image_path else ""
+        }
+        self.accept()
+
+    def get_manual_entry(self):
+        return self.manual_entry
 
 def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
