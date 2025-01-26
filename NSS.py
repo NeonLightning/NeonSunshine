@@ -284,7 +284,7 @@ class SortDialog(QDialog):
 
     def fetch_game_image(self, game_name):
         api_key = self.config.get("api_key")
-        sanitized_name = re.sub(r'[^a-zA-Z0-9 ]', '', game_name)
+        sanitized_name = re.sub(r'[^a-zA-Z0-9 \-]', '', game_name)
         if not api_key:
             logging.error("SteamGridDB API Key is not configured.")
             QMessageBox.warning(self, "Configuration Error", "SteamGridDB API Key is missing. Please configure the settings.")
