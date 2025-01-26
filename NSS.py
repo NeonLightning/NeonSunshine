@@ -326,7 +326,6 @@ class SortDialog(QDialog):
             QMessageBox.warning(self, "Error", f"Failed to download or save cover for {game_name}: {e}")
         return None
 
-
 class NoScrollComboBox(QComboBox):
     def wheelEvent(self, event):
         event.ignore()
