@@ -68,6 +68,7 @@ class SortDialog(QDialog):
     def __init__(self, apps, json_file_path, parent=None):
         super().__init__(parent)
         self.apps = apps
+        self.setWindowTitle(f"Sort Applications - {len(self.apps)} Apps Loaded")
         self.json_file_path = json_file_path
         self.cmd_edits = {}
         self.config_dialog = ConfigDialog(self)
@@ -77,8 +78,9 @@ class SortDialog(QDialog):
         self.setLayout(layout)
         self.list_widget = QListWidget(self)
         self.list_widget.setDragDropMode(QListWidget.InternalMove)
-        for app in apps:
-            item_widget = self.create_app_widget(app)
+        self.list_widget.model().rowsMoved.connect(self.refresh_drag_handles)
+        for i, app in enumerate(apps):
+            item_widget = self.create_app_widget(app, i)
             list_item = QListWidgetItem(self.list_widget)
             list_item.setSizeHint(item_widget.sizeHint())
             self.list_widget.addItem(list_item)
@@ -100,13 +102,13 @@ class SortDialog(QDialog):
             self.config = config_dialog.get_config()
             self.download_covers = self.config.get("download_covers", True)
 
-    def create_app_widget(self, app):
+    def create_app_widget(self, app, index):
         widget = QWidget()
         layout = QHBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(10)
         widget.setLayout(layout)
-        drag_handle = QLabel("≡")
+        drag_handle = QLabel(str(index + 1))
         drag_handle.setFixedSize(20, 20)
         drag_handle.setStyleSheet("""
             QLabel {
@@ -197,6 +199,13 @@ class SortDialog(QDialog):
         name_label.mousePressEvent = lambda event: toggle_name_edit()
         edit_button.clicked.connect(toggle_cmd_edit)
         return widget
+
+    def refresh_drag_handles(self):
+        for i in range(self.list_widget.count()):
+            list_item = self.list_widget.item(i)
+            item_widget = self.list_widget.itemWidget(list_item)
+            drag_handle = item_widget.layout().itemAt(0).widget()
+            drag_handle.setText(str(i + 1))
 
     def open_config_dialog(self):
         config_dialog = ConfigDialog(self)
@@ -335,7 +344,7 @@ class FolderScannerApp(QWidget):
         super().__init__()
         self.setWindowIcon(QIcon('icon.ico'))
         self.FILTER_KEYWORDS = ['uninstall', 'setup', 'unins', 'unitycrashhandler64', 'crashpad_handler', 'unitycrashhandler32', 'vcredist_x64', 'vcredist_x642', 'vcredist_x643', 'vcredist_x86', 'vcredist_x862', 'vcredist_x863', 'vc_redist.x864', 'vc_redist.x644', 'oalinst', 'vc_redistx86', 'vc_redistx64', 'vc_redistx64']
-        self.setWindowTitle("Folder and Executable Selector")
+        self.setWindowTitle("NeonSunshine")
         self.setStyleSheet("""
             QWidget {
                 background-color: #2e2e2e;
