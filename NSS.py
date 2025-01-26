@@ -406,15 +406,25 @@ class FolderScannerApp(QWidget):
         covers_dir = os.path.dirname(self.loaded_json_path)
         self.covers_folder = os.path.join(covers_dir, "covers")
         if os.path.exists(self.covers_folder):
-            try:
-                shutil.rmtree(self.covers_folder)
-                logging.info("Covers folder cleared successfully.")
-                QMessageBox.information(self, "Success", "Covers folder cleared!")
-                self.covers_folder = None
-                self.update_gui()
-            except Exception as e:
-                logging.error(f"Failed to clear covers folder: {e}")
-                QMessageBox.critical(self, "Error", f"Failed to clear covers folder: {e}")
+            reply = QMessageBox.question(
+                self,
+                "Confirm Deletion",
+                "Are you sure you want to clear the covers folder? This action cannot be undone.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                try:
+                    shutil.rmtree(self.covers_folder)
+                    logging.info("Covers folder cleared successfully.")
+                    QMessageBox.information(self, "Success", "Covers folder cleared!")
+                    self.covers_folder = None
+                    self.update_gui()
+                except Exception as e:
+                    logging.error(f"Failed to clear covers folder: {e}")
+                    QMessageBox.critical(self, "Error", f"Failed to clear covers folder: {e}")
+            else:
+                logging.info("Covers folder clearance canceled by the user.")
         else:
             QMessageBox.information(self, "Information", "Covers folder does not exist.")
 
