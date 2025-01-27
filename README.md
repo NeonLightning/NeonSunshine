@@ -1,15 +1,16 @@
 # NeonSunshine
 
-`NeonSunshine` is a PyQt5-based GUI application that helps ease the adding of games to sunshine. The application supports JSON file loading, sorting, and saving, with optional integration to download cover images from the SteamGridDB API.
+`NeonSunshine` is a PyQt5-based GUI application designed to simplify adding games to Sunshine. It supports JSON file loading, sorting, and saving, with optional integration to download cover images from the SteamGridDB API.
 
 ## Features
 
 - **Folder Selection**: Add folders to scan for executable files.
-- **JSON Management**: Load, sort, and save JSON configuration files containing application data.
-- **Customization**: Edit application names and commands.
-- **Drag-and-Drop Sorting**: Reorder applications using a simple drag-and-drop interface.
-- **SteamGridDB Integration**: Fetch and save cover images for applications (requires API key).(Covers are saved in a folder named covers along side the saved json.)
+- **Manual Entry**: Add custom applications manually, including commands, working directories, and optional cover images.
+- **JSON Management**: Load, validate, sort, and save JSON configuration files containing application data.
+- **Customization**: Edit application names and commands directly in the interface.
+- **SteamGridDB Integration**: Fetch and save cover images for applications (requires API key). Covers are saved in a folder named `covers` alongside the saved JSON.
 - **Configuration Management**: Save and load application settings via a configuration dialog.
+- **Clear Covers Folder**: Option to clear the `covers` folder directly from the UI.
 
 ## Screenshots
 
@@ -57,21 +58,29 @@
 
    - Click "Add Folder" to select folders to scan for executables.
 
-2. **Load JSON Configuration**:
+2. **Add Manual Entry**:
 
-   - Use the "Load JSON" button to load an existing JSON configuration file.
+   - Use the "Add Manual Entry" button to add custom applications, including specifying commands, working directories, and cover images.
 
-3. **Sort Applications**:
+3. **Load JSON Configuration**:
 
-   - Click "Load and Sort JSON" to open the saving and editing interface.
+   - Use the "Load JSON" button to load an existing JSON configuration file.(It will update the loaded folders entries aswell.)
 
-4. **Save Configuration**:
+4. **Sort Applications**:
+
+   - Click "Load and Sort JSON" to open the sorting and editing interface.
+
+5. **Save Configuration**:
 
    - Save your sorted configuration by clicking "Sort Configuration."
 
-5. **Configure Application Settings**:
+6. **Configure Application Settings**:
 
-   - Open the configuration dialog to enter your SteamGridDB API key or toggle download options.
+   - Open the configuration dialog to enter your SteamGridDB API key, toggle download options, or manage the application settings.
+
+7. **Clear Covers Folder**:
+
+   - Use the "Clear Covers Folder" button to delete all downloaded covers.
 
 ## Configuration
 
@@ -96,10 +105,11 @@ Errors and logs are saved in the `NSS_errors.log` file in the application direct
 
 ## Acknowledgments
 
+- [Sunshine](https://github.com/LizardByte/Sunshine) for the program this is for.
 - [SteamGridDB API](https://www.steamgriddb.com/) for providing application cover images.
 - PyQt5 for the GUI framework.
 
 ---
 
-Enjoy managing your applications effortlessly with `NeonSunshine`! What started as a 10minute project to individually add games. turned into a long slog to make a full fledged program.
+Enjoy managing your applications effortlessly with `NeonSunshine`! What started as a quick project to add games individually turned into a full-fledged program.
 
